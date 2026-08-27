@@ -39,8 +39,7 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 ## Opsætning -> Udvides i takt med at vi immplementer teknologier
 ```bash
 # Klon repo
-git clone <repo-url>
-cd Semesterprojekt2PBA
+git clone https://github.com/mpeder75/Semesterprojekt2PBA.git
 ```
 ---
 
@@ -48,17 +47,21 @@ cd Semesterprojekt2PBA
 
 | Kategori | Hvad ignoreres |
 |---|---|
-| **.NET / C#** | Build-output (`bin/`, `obj/`), NuGet-pakker, test-resultater, MSBuild-logs |
-| **Visual Studio 2026** | `.vs/`, publish-profiler med credentials, temp- og cache-filer |
+| **.NET / C#** | Build-output (`bin/`, `obj/`), NuGet-pakker, test-resultater, MSBuild-logs, `project.lock.json` |
+| **Visual Studio 2022/2026** | `.vs/`, publish-profiler med credentials (`*.pubxml`, `*.publishsettings`), cache-filer (`*.VC.db`, `*.[Cc]ache`), profiler-filer, temp-filer (`*.tmp`, `*.tmp_proj`) |
 | **GitHub Copilot** | Lokal Copilot-konfiguration (`.copilot/`) |
 | **Claude Code** | `.claude/`, `CLAUDE.md`, `.claudeignore` |
-| **Secrets / miljø** | `.env`-filer, certifikater (`.pfx`, `.pem`), `appsettings.Development.json`, `secrets.json` |
-| **Docker** | Lokale overrides (`docker-compose.override.yml`), mountede volumes |
+| **Secrets / miljø** | `.env`-filer (undtagen `.env.example`), certifikater (`.pfx`, `.pem`, `.cer`), `appsettings.Development.json`, `secrets.json` |
+| **Docker** | Lokalt mountede volumes (`docker-data/`, `docker-volumes/`) — docker-compose filer commits til repo |
 | **RabbitMQ** | Data- og logmapper, `mnesia/`, `.erlang.cookie` |
-| **PostgreSQL** | `pgdata/`, database dumps, `.pgpass` |
+| **PostgreSQL** | `pgdata/`, database dumps (`.dump`, `.pgdump`), `.pgpass` |
 | **Redis** | `dump.rdb`, `appendonly.aof`, logfiler |
+| **SQL Server** | `*.mdf`, `*.ldf` |
+| **Frontend / Node** | `node_modules/`, `.sass-cache/`, `wwwroot/lib/` |
 | **OS** | `.DS_Store` (macOS), `Thumbs.db` (Windows), temp-filer |
+| **Diverse** | `*.dbmdl`, `ClientBin/`, `orleans.codegen.cs` |
 
-> ⚠️ **Secrets deles aldrig i git.** Brug `.env.example` som skabelon og udfyld din egen `.env` lokalt.
-
+> ⚠️ **Secrets må deles aldrig i git.** Brug `.env.example` som skabelon og udfyld din egen `.env` lokalt når det er opsat.
+>
+> 🐳 **Docker-compose filer committes** så alle kan køre samme miljø.
 ---
