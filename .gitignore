@@ -29,7 +29,7 @@ project.fragment.lock.json
 *.nuget.props
 *.nuget.targets
 
-# User-specific / secrets
+# Secrets / user-specific
 *.user
 *.suo
 *.userprefs
@@ -53,22 +53,65 @@ coverage/
 *.coveragexml
 
 ##############################################
+# Visual Studio 2022/2026
+##############################################
+.vs/
+*.rsuser
+*.MoXoXo
+*.sln.docstates
+_ReSharper*/
+*.ReSharper
+*.DotSettings.user
+
+# VS temp files
+*.suo
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# VS publish profiles (kan indeholde credentials)
+**/Properties/PublishProfiles/
+*.pubxml
+*.pubxml.user
+
+##############################################
+# GitHub Copilot (Visual Studio extension)
+##############################################
+.copilot/
+.github/copilot-instructions.md   # lokal override — del ikke
+
+##############################################
+# Claude Code
+##############################################
+.claude/
+CLAUDE.md
+.claudeignore
+
+##############################################
 # Environment & secrets
 ##############################################
 .env
 .env.*
-!.env.example        # <-- behold eksempel-filen
+!.env.example
 *.pfx
 *.p12
 *.key
 *.pem
+*.cer
 
 ##############################################
 # Docker
 ##############################################
-# Ignorer ikke docker-compose.yml, men ignorer overrides med secrets
 docker-compose.override.yml
 docker-compose.local.yml
+
+# Docker volumes mountet lokalt
+**/docker-data/
+**/docker-volumes/
 
 ##############################################
 # RabbitMQ
@@ -79,28 +122,35 @@ rabbitmq/mnesia/
 .erlang.cookie
 
 ##############################################
-# Claude Code
+# PostgreSQL
 ##############################################
-.claude/
-CLAUDE.md
-.claudeignore
+postgres/data/
+pgdata/
+*.sql.bak
+*.dump
+*.pgdump
+.pgpass
 
 ##############################################
-# IDEs
+# Redis
+##############################################
+redis/data/
+dump.rdb
+appendonly.aof
+redis.log
+*.rdb
+
+##############################################
+# IDEs - øvrige
 ##############################################
 
 # Rider
 .idea/
 *.sln.iml
 
-# Visual Studio
-.vs/
-*.rsuser
-*.MoXoXo
-
 # VS Code
 .vscode/
-!.vscode/extensions.json   # <-- del gerne anbefalede extensions
+!.vscode/extensions.json
 
 ##############################################
 # OS
