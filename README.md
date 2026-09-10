@@ -7,7 +7,7 @@
 | Ressource                     | Link                                                                                |
 | ----------------------------- | ----------------------------------------------------------------------------------- |
 | eShopOnWeb (original monolit) | [dotnet-architecture/eShopOnWeb](https://github.com/dotnet-architecture/eShopOnWeb) |
-| Dokumentation                 | *(indsæt link når googledrev etc er oprettet)*                                      |
+| Dokumentation                 | [Fællesdrev-SemesterProjekt2](https://drive.google.com/drive/folders/1r3rnDwQCycOy6qGiWcxL7VZdWAsgNBHc) |
 
 ---
 
@@ -121,15 +121,6 @@ Første kørsel **seeder** databaserne automatisk med produkter og testbrugere.
 | ----- | ----- | -------- |
 | Almindelig bruger | `demouser@microsoft.com` | `Pass@word1` |
 | Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` |
-
-### 🩹 Kendte ting / fejlsøgning
-
-- **"Welcome to .NET 10.0! SDK Version: 10.0.401"** i outputtet er bare CLI'ens engangs-velkomstbesked — selve buildet kører på 8.0 (styret af `global.json`). Tjek at EF-runtime rapporteres som `8.0.x`.
-- **NuGet-advarsler** (`NU1903` på `System.Text.Json`, `NU1902` på `Azure.Identity`) er kendte sårbarheds-advarsler i referenceprojektets pakkeversioner. Harmløse for lokal kørsel.
-- **"EF tools 8.0.0 is older than runtime 8.0.x"** er kosmetisk. Fjern evt. med `dotnet tool update dotnet-ef`.
-- **`dotnet ef` findes ikke:** kør `dotnet tool restore` (lokalt værktøj via manifest) eller `dotnet tool update --global dotnet-ef`.
-- **File-locking-fejl ved build:** stop kørende `dotnet run`-processer med `Ctrl+C`, før du bygger solution igen.
-- **Browseren klager over certifikat:** kør `dotnet dev-certs https --trust` én gang.
 
 ---
 
