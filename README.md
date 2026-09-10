@@ -47,8 +47,6 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 > Udvides i takt med at vi implementerer flere teknologier (RabbitMQ, API Gateway, Docker osv.).
 
-Denne guide får monolitten (eShopOnWeb) op at køre lokalt med en rigtig database. Det er udgangspunktet, som microservices gradvist trækkes ud fra.
-
 ### Forudsætninger
 
 | Værktøj | Krav | Note |
@@ -78,9 +76,9 @@ Kør migrations fra `src/Web`: **Så du skal fysisk stå i mappen og køre komma
 
 ```bash
 Min ser således ud: 
-PS C:\Users\mpede\source\repos\Semesterprojekt2PBA\src\Web> dotnet tool restore
+PS C:\Users\mpede\source\repos\Semesterprojekt2PBA\src\Web>
 ```
-
+### Kommandoer der skal køres lokalt for I kan genere databasen:
 ```bash
 cd src/Web
 dotnet restore
