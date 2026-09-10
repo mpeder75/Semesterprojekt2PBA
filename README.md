@@ -54,10 +54,7 @@ Denne guide får monolitten (eShopOnWeb) op at køre lokalt med en rigtig databa
 | Værktøj | Krav | Note |
 | ------- | ---- | ---- |
 | **.NET 8 SDK** | Påkrævet — **SDK, ikke kun runtime** | `global.json` låser projektet til 8.0-serien (`rollForward: latestFeature`). En nyere SDK som .NET 10 bruges **ikke** til dette projekt, så har du kun .NET 10 installeret, fejler build. Hent SDK 8.0.x her: <https://dotnet.microsoft.com/download/dotnet/8.0> |
-| .NET 10 SDK | Valgfri | Må gerne være installeret samtidig — SDK'er ligger side om side og konflikter ikke. |
-| **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificér med `sqllocaldb info` → skal vise `MSSQLLocalDB`. Ingen Docker nødvendig til dette trin. |
-| Visual Studio 2022/2026 **eller** VS Code | Anbefalet | VS Code kræver *C# Dev Kit*-udvidelsen. |
-| Git | Påkrævet | |
+| **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificer med `sqllocaldb info` → skal vise `MSSQLLocalDB`. |
 
 Verificér at det rigtige SDK er på plads:
 
@@ -77,7 +74,12 @@ cd Semesterprojekt2PBA
 
 Projektet bruger som default en **rigtig** database (ikke in-memory). De medfølgende connection strings peger allerede på `(localdb)\MSSQLLocalDB`, så du skal normalt **ikke** ændre `appsettings.json`.
 
-Kør migrations fra `src/Web`:
+Kør migrations fra `src/Web`: **Så du skal fysisk stå i mappen og køre kommandoer**
+
+```bash
+Min ser således ud: 
+PS C:\Users\mpede\source\repos\Semesterprojekt2PBA\src\Web> dotnet tool restore
+```
 
 ```bash
 cd src/Web
