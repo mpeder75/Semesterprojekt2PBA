@@ -1,23 +1,30 @@
 # Semesterprojekt2PBA
+
 > Konvertering af Monolit til Microservices vha. Strangler Pattern
 
 ## 🔗 Links
-| Ressource | Link |
-|---|---|
+
+| Ressource                     | Link                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
 | eShopOnWeb (original monolit) | [dotnet-architecture/eShopOnWeb](https://github.com/dotnet-architecture/eShopOnWeb) |
-| Dokumentation | *(indsæt link når googledrev etc er oprettet)* |
+| Dokumentation                 | *(indsæt link når googledrev etc er oprettet)*                                      |
 
 ---
+
 # Opgavebeskrivelse: Konvertering af Monolit til Microservices vha Strangler Pattern
 
 ## Baggrund
+
 I dette projekt skal I arbejde med omdannelsen af et stort, monolitisk system til en moderne microservice-arkitektur. I vil tage udgangspunkt i projektet eShopOnWeb, som er en monolitisk applikation, der simulerer en e-handelsplatform. Jeres opgave bliver gradvist at erstatte dele af systemet ved hjælp af et Strangler Pattern, hvilket betyder, at I flytter logikken ud i uafhængige microservices, samtidig med at det eksisterende system forbliver operationelt under overgangen.
 
 ## Hovedmål
+
 Målet med projektet er at omdanne eShopOnWeb fra en monolit til en microservice-arkitektur, hvor hver service har klare ansvar, kan skaleres uafhængigt, og implementeres med passende kommunikationsmekanismer mellem tjenesterne. I skal derudover integrere et nyt lagerstyringssystem I har lavet, men ikke er implementeret i eShopOnWeb.
 
 ## Kravspecifikation
+
 I skal sikre jer, at følgende krav opfyldes i jeres projekt:
+
 1. **Identificér og afgræns services:** Analysér det eksisterende monolitiske system og identificér de forretningsdomæner, der kan adskilles som uafhængige microservices. I skal opdele monolitten i mindst 3 microservices, f.eks. til produktkatalog, ordrehåndtering og betalingsservice.
 2. **Strangler Pattern implementering:** Brug strangler-patternet til gradvist at overføre funktionalitet fra det monolitiske system til de nye microservices uden at afbryde driften. De dele, der konverteres, skal rutes til microservices, mens de øvrige funktioner stadig kører i monolitten.
 3. **Lagerstyringssystem:** Implementér det forberedte lagerstyringssystem i projektet. Systemet skal være ansvarligt for at holde styr på produktbeholdning, modtage opdateringer fra ordreafdelingen og f.eks håndtere reservation af produkter ved checkout. Dette skal implementeres som en selvstændig microservice.
@@ -36,32 +43,112 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 ---
 
-## Opsætning -> Udvides i takt med at vi immplementer teknologier
+## ⚙️ Opsætning (lokal udvikling)
+
+> Udvides i takt med at vi implementerer flere teknologier (RabbitMQ, API Gateway, Docker osv.).
+
+Denne guide får monolitten (eShopOnWeb) op at køre lokalt med en rigtig database. Det er udgangspunktet, som microservices gradvist trækkes ud fra.
+
+### Forudsætninger
+
+| Værktøj | Krav | Note |
+| ------- | ---- | ---- |
+| **.NET 8 SDK** | Påkrævet — **SDK, ikke kun runtime** | `global.json` låser projektet til 8.0-serien (`rollForward: latestFeature`). En nyere SDK som .NET 10 bruges **ikke** til dette projekt, så har du kun .NET 10 installeret, fejler build. Hent SDK 8.0.x her: <https://dotnet.microsoft.com/download/dotnet/8.0> |
+| .NET 10 SDK | Valgfri | Må gerne være installeret samtidig — SDK'er ligger side om side og konflikter ikke. |
+| **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificér med `sqllocaldb info` → skal vise `MSSQLLocalDB`. Ingen Docker nødvendig til dette trin. |
+| Visual Studio 2022/2026 **eller** VS Code | Anbefalet | VS Code kræver *C# Dev Kit*-udvidelsen. |
+| Git | Påkrævet | |
+
+Verificér at det rigtige SDK er på plads:
+
 ```bash
-# Klon repo
-git clone https://github.com/mpeder75/Semesterprojekt2PBA.git
+dotnet --list-sdks
+# Der skal være en 8.0.x-linje (fx 8.0.425). 10.0.x må gerne stå ved siden af.
 ```
+
+### 1. Klon repo
+
+```bash
+git clone https://github.com/mpeder75/Semesterprojekt2PBA.git
+cd Semesterprojekt2PBA
+```
+
+### 2. Opret databaserne (EF Core migrations)
+
+Projektet bruger som default en **rigtig** database (ikke in-memory). De medfølgende connection strings peger allerede på `(localdb)\MSSQLLocalDB`, så du skal normalt **ikke** ændre `appsettings.json`.
+
+Kør migrations fra `src/Web`:
+
+```bash
+cd src/Web
+dotnet restore
+dotnet tool restore
+dotnet ef database update -c catalogcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj
+dotnet ef database update -c appidentitydbcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj
+```
+
+Det opretter to databaser på din LocalDB:
+
+- `Microsoft.eShopOnWeb.CatalogDb` — katalog, kurv og ordrer
+- `Microsoft.eShopOnWeb.Identity` — brugere og login
+
+Du kan inspicere dem i SSMS ved at forbinde til serveren `(localdb)\MSSQLLocalDB`.
+
+### 3. Kør applikationen
+
+Vil du kun se selve butikken, er `Web`-projektet nok. Admin-siden (`/admin`) er en Blazor WebAssembly-app, der skal snakke med `PublicApi`, så den kræver at **begge** projekter kører:
+
+```bash
+# terminal 1 — fra src/PublicApi
+dotnet run
+
+# terminal 2 — fra src/Web
+dotnet run --launch-profile Web
+```
+
+| Side | URL |
+| ---- | --- |
+| Butik | <https://localhost:5001/> |
+| Admin | <https://localhost:5001/admin> |
+
+Første kørsel **seeder** databaserne automatisk med produkter og testbrugere.
+
+### Testbrugere
+
+| Rolle | Email | Password |
+| ----- | ----- | -------- |
+| Almindelig bruger | `demouser@microsoft.com` | `Pass@word1` |
+| Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` |
+
+### 🩹 Kendte ting / fejlsøgning
+
+- **"Welcome to .NET 10.0! SDK Version: 10.0.401"** i outputtet er bare CLI'ens engangs-velkomstbesked — selve buildet kører på 8.0 (styret af `global.json`). Tjek at EF-runtime rapporteres som `8.0.x`.
+- **NuGet-advarsler** (`NU1903` på `System.Text.Json`, `NU1902` på `Azure.Identity`) er kendte sårbarheds-advarsler i referenceprojektets pakkeversioner. Harmløse for lokal kørsel.
+- **"EF tools 8.0.0 is older than runtime 8.0.x"** er kosmetisk. Fjern evt. med `dotnet tool update dotnet-ef`.
+- **`dotnet ef` findes ikke:** kør `dotnet tool restore` (lokalt værktøj via manifest) eller `dotnet tool update --global dotnet-ef`.
+- **File-locking-fejl ved build:** stop kørende `dotnet run`-processer med `Ctrl+C`, før du bygger solution igen.
+- **Browseren klager over certifikat:** kør `dotnet dev-certs https --trust` én gang.
+
 ---
 
 ## .gitignore – Hvad er dækket?
 
-| Kategori | Hvad ignoreres |
-|---|---|
-| **.NET / C#** | Build-output (`bin/`, `obj/`), NuGet-pakker, test-resultater, MSBuild-logs, `project.lock.json` |
+| Kategori                    | Hvad ignoreres                                                                                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **.NET / C#**               | Build-output (`bin/`, `obj/`), NuGet-pakker, test-resultater, MSBuild-logs, `project.lock.json`                                                                       |
 | **Visual Studio 2022/2026** | `.vs/`, publish-profiler med credentials (`*.pubxml`, `*.publishsettings`), cache-filer (`*.VC.db`, `*.[Cc]ache`), profiler-filer, temp-filer (`*.tmp`, `*.tmp_proj`) |
-| **GitHub Copilot** | Lokal Copilot-konfiguration (`.copilot/`) |
-| **Claude Code** | `.claude/`, `CLAUDE.md`, `.claudeignore` |
-| **Secrets / miljø** | `.env`-filer (undtagen `.env.example`), certifikater (`.pfx`, `.pem`, `.cer`), `appsettings.Development.json`, `secrets.json` |
-| **Docker** | Lokalt mountede volumes (`docker-data/`, `docker-volumes/`) — docker-compose filer commits til repo |
-| **RabbitMQ** | Data- og logmapper, `mnesia/`, `.erlang.cookie` |
-| **PostgreSQL** | `pgdata/`, database dumps (`.dump`, `.pgdump`), `.pgpass` |
-| **Redis** | `dump.rdb`, `appendonly.aof`, logfiler |
-| **SQL Server** | `*.mdf`, `*.ldf` |
-| **Frontend / Node** | `node_modules/`, `.sass-cache/`, `wwwroot/lib/` |
-| **OS** | `.DS_Store` (macOS), `Thumbs.db` (Windows), temp-filer |
-| **Diverse** | `*.dbmdl`, `ClientBin/`, `orleans.codegen.cs` |
+| **GitHub Copilot**          | Lokal Copilot-konfiguration (`.copilot/`)                                                                                                                             |
+| **Claude Code**             | `.claude/`, `CLAUDE.md`, `.claudeignore`                                                                                                                              |
+| **Secrets / miljø**         | `.env`-filer (undtagen `.env.example`), certifikater (`.pfx`, `.pem`, `.cer`), `appsettings.Development.json`, `secrets.json`                                         |
+| **Docker**                  | Lokalt mountede volumes (`docker-data/`, `docker-volumes/`) — docker-compose filer commits til repo                                                                   |
+| **RabbitMQ**                | Data- og logmapper, `mnesia/`, `.erlang.cookie`                                                                                                                       |
+| **PostgreSQL**              | `pgdata/`, database dumps (`.dump`, `.pgdump`), `.pgpass`                                                                                                             |
+| **Redis**                   | `dump.rdb`, `appendonly.aof`, logfiler                                                                                                                                |
+| **SQL Server**              | `*.mdf`, `*.ldf`                                                                                                                                                      |
+| **Frontend / Node**         | `node_modules/`, `.sass-cache/`, `wwwroot/lib/`                                                                                                                       |
+| **OS**                      | `.DS_Store` (macOS), `Thumbs.db` (Windows), temp-filer                                                                                                                |
+| **Diverse**                 | `*.dbmdl`, `ClientBin/`, `orleans.codegen.cs`                                                                                                                         |
 
-> ⚠️ **Secrets må deles aldrig i git.** Brug `.env.example` som skabelon og udfyld din egen `.env` lokalt når det er opsat.
+> ⚠️ **Secrets må aldrig deles i git.** Brug `.env.example` som skabelon og udfyld din egen `.env` lokalt når det er opsat.
 >
 > 🐳 **Docker-compose filer committes** så alle kan køre samme miljø.
----
