@@ -1,22 +1,176 @@
-name: eShopOnWeb Build and Test
+name: eShopOnWeb CI/CD Pipeline
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-
+  source:
+    name: Source checkout
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: '8.0.x'
-        include-prerelease: true
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Record source metadata
+        run: |
+          mkdir -p .ci
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "ref=${GITHUB_REF}"
+            echo "sha=${GITHUB_SHA}"
+          } > .ci/source-metadata.txt
+      - name: Upload source metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-metadata
+          path: .ci/source-metadata.txt
+          retention-days: 7
 
-    - name: Build with dotnet
-      run: dotnet build ./eShopOnWeb.sln --configuration Release
-    
-    - name: Test with dotnet
-      run: dotnet test ./eShopOnWeb.sln --configuration Release
+  build:
+    name: Build and package artifact
+    runs-on: ubuntu-latest
+    needs: source
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore dependencies
+        run: dotnet restore ./eShopOnWeb.sln
+      - name: Build solution
+        run: dotnet build ./eShopOnWeb.sln --configuration Release --no-restore -p:LibraryRestore=false
+      - name: Publish Web deployable artifact
+        run: dotnet publish ./src/Web/Web.csproj --configuration Release --no-build --output ./artifacts/web -p:LibraryRestore=false
+      - name: Upload deployable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-release
+          path: ./artifacts/web
+          retention-days: 14
+      - name: Build stage summary
+        run: |
+          {
+            echo "### Build artifact"
+            echo "- Artifact name: \`webapp-release\`"
+            echo "- Artifact path: \`./artifacts/web\`"
+            echo "- Retention: 14 days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  fast-tests:
+    name: Fast unit tests
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore dependencies
+        run: dotnet restore ./tests/UnitTests/UnitTests.csproj
+      - name: Run unit tests (timeout guarded)
+        run: dotnet test ./tests/UnitTests/UnitTests.csproj --configuration Release --no-restore --blame-hang --blame-hang-timeout 5m -p:LibraryRestore=false
+
+  slow-tests:
+    name: Slow integration/API tests
+    runs-on: ubuntu-latest
+    needs: fast-tests
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore integration/API test dependencies
+        run: |
+          dotnet restore ./tests/IntegrationTests/IntegrationTests.csproj
+          dotnet restore ./tests/PublicApiIntegrationTests/PublicApiIntegrationTests.csproj
+          dotnet restore ./tests/FunctionalTests/FunctionalTests.csproj
+      - name: Run integration tests
+        run: dotnet test ./tests/IntegrationTests/IntegrationTests.csproj --configuration Release --no-restore --blame-hang --blame-hang-timeout 10m -p:LibraryRestore=false
+      - name: Run Public API integration tests
+        run: dotnet test ./tests/PublicApiIntegrationTests/PublicApiIntegrationTests.csproj --configuration Release --no-restore --blame-hang --blame-hang-timeout 10m -p:LibraryRestore=false
+      - name: Run functional tests
+        run: dotnet test ./tests/FunctionalTests/FunctionalTests.csproj --configuration Release --no-restore --blame-hang --blame-hang-timeout 10m -p:LibraryRestore=false
+
+  production-deploy:
+    name: Production deploy
+    runs-on: ubuntu-latest
+    needs: slow-tests
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment:
+      name: production
+    steps:
+      - name: Download deployable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webapp-release
+          path: ./deploy-artifact
+      - name: Validate artifact contents
+        run: |
+          test -f ./deploy-artifact/Web.dll
+          {
+            echo "### Production deploy stage"
+            echo "- Using build artifact: \`webapp-release\`"
+            echo "- Artifact validated successfully"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy to Azure Web App (optional when secrets configured)
+        if: ${{ secrets.AZURE_WEBAPP_NAME != '' && secrets.AZURE_WEBAPP_PUBLISH_PROFILE != '' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./deploy-artifact
+      - name: Deployment placeholder guidance
+        if: ${{ secrets.AZURE_WEBAPP_NAME == '' || secrets.AZURE_WEBAPP_PUBLISH_PROFILE == '' }}
+        run: |
+          echo "::notice title=Deployment not configured::Set AZURE_WEBAPP_NAME and AZURE_WEBAPP_PUBLISH_PROFILE secrets to enable real production deployment."
+          {
+            echo "- Real deployment was skipped because required production secrets are not configured."
+            echo "- Configure repository or environment secrets: \`AZURE_WEBAPP_NAME\` and \`AZURE_WEBAPP_PUBLISH_PROFILE\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    name: Failure notification summary
+    runs-on: ubuntu-latest
+    needs:
+      - source
+      - build
+      - fast-tests
+      - slow-tests
+      - production-deploy
+    if: always()
+    steps:
+      - name: Publish workflow status summary
+        run: |
+          source_result="${{ needs.source.result }}"
+          build_result="${{ needs.build.result }}"
+          fast_tests_result="${{ needs.fast-tests.result }}"
+          slow_tests_result="${{ needs.slow-tests.result }}"
+          deploy_result="${{ needs.production-deploy.result }}"
+
+          {
+            echo "### Pipeline stage results"
+            echo "- Source checkout: ${source_result}"
+            echo "- Build: ${build_result}"
+            echo "- Fast tests: ${fast_tests_result}"
+            echo "- Slow tests: ${slow_tests_result}"
+            echo "- Production deploy: ${deploy_result}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${source_result}" == "failure" || "${build_result}" == "failure" || "${fast_tests_result}" == "failure" || "${slow_tests_result}" == "failure" || "${deploy_result}" == "failure" || "${source_result}" == "cancelled" || "${build_result}" == "cancelled" || "${fast_tests_result}" == "cancelled" || "${slow_tests_result}" == "cancelled" || "${deploy_result}" == "cancelled" ]]; then
+            echo "::error title=CI/CD pipeline failure::One or more pipeline stages failed. See summary and stage logs."
+            exit 1
+          fi
