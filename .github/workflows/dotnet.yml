@@ -8,8 +8,11 @@ on:
 
 env:
   SOLUTION: eShopOnWeb.sln
+  WEB_PROJECT: src/Web/Web.csproj
+  AZURE_WEBAPP_NAME: WebAppTest-12345
 
 jobs:
+  # CI: kører på både push og pull requests
   build:
     runs-on: ubuntu-latest
     steps:
@@ -24,3 +27,31 @@ jobs:
       run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
     - name: Test
       run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --verbosity normal
+
+    # Pakker kun appen, når der er pushet til main (ikke på PR'er)
+    - name: Publish
+      if: github.event_name == 'push'
+      run: dotnet publish ${{ env.WEB_PROJECT }} --no-restore --configuration Release --output ./publish
+    - name: Upload artifact
+      if: github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: webapp
+        path: ./publish
+
+  # CD: kører kun hvis build + tests lykkedes, og kun ved push til main
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: webapp
+        path: ./publish
+    - name: Deploy to Azure App Service
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: ./publish
