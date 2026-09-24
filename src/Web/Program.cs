@@ -24,7 +24,8 @@ builder.Logging.AddConsole();
 
 if (builder.Environment.IsDevelopment()
     || builder.Environment.EnvironmentName == "Docker"
-    || builder.Configuration.GetValue<bool>("UseOnlyInMemoryDatabase")){
+    || builder.Configuration.GetValue<bool>("UseOnlyInMemoryDatabase")
+    || !string.IsNullOrEmpty(builder.Configuration.GetConnectionString("CatalogConnection"))){
     // Configure SQL Server (local)
     Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 }
