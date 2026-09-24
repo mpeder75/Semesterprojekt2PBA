@@ -9,7 +9,7 @@ on:
 env:
   SOLUTION: eShopOnWeb.sln
   WEB_PROJECT: src/Web/Web.csproj
-  AZURE_WEBAPP_NAME: WebAppTest-12345
+  AZURE_WEBAPP_NAME: app-eshop-web
 
 jobs:
   # CI: kører på både push og pull requests
