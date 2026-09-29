@@ -1,7 +1,6 @@
 ﻿using System;
 using Ardalis.GuardClauses;
 using CatalogService.api.Interfaces;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 
 namespace CatalogService.api.Entities;
 

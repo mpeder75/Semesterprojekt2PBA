@@ -1,7 +1,6 @@
-﻿using CatalogService.api.Entities;
-using CatalogService.api.Interfaces;
+﻿using CatalogService.api.Interfaces;
 
-namespace Microsoft.eShopWeb.ApplicationCore.Entities;
+namespace CatalogService.api.Entities;
 
 public class CatalogType : BaseEntity, IAggregateRoot
 {
