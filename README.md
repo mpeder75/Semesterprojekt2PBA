@@ -118,7 +118,7 @@ Første kørsel **seeder** databaserne automatisk med produkter og testbrugere.
 | Rolle | Email | Password |
 | ----- | ----- | -------- |
 | Almindelig bruger | `demouser@microsoft.com` | `Pass@word1` |
-| Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` |
+| Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` | DICK
 
 ---
 
