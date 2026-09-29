@@ -11,7 +11,7 @@ public class CatalogContextSeed
 {
     public static async Task SeedAsync(CatalogContext catalogContext,
         ILogger logger,
-        int retry = 0)
+        int retry = 0, bool seedCatalog = true)
     {
         var retryForAvailability = retry;
         try
@@ -20,6 +20,8 @@ public class CatalogContextSeed
             {
                 catalogContext.Database.Migrate();
             }
+
+            if (!seedCatalog) return;
 
             if (!await catalogContext.CatalogBrands.AnyAsync())
             {
@@ -52,7 +54,7 @@ public class CatalogContextSeed
             retryForAvailability++;
             
             logger.LogError(ex.Message);
-            await SeedAsync(catalogContext, logger, retryForAvailability);
+            await SeedAsync(catalogContext, logger, retryForAvailability, seedCatalog);
             throw;
         }
     }

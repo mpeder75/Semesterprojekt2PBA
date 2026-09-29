@@ -41,6 +41,16 @@ public class ExceptionMiddleware
                 Message = duplicationException.Message
             }.ToString());
         }
+        else if (exception is CatalogUnavailableException)
+        {
+            context.Response.StatusCode = 503;
+            await context.Response.WriteAsync(new ErrorDetails { StatusCode = 503, Message = exception.Message }.ToString());
+        }
+        else if (exception is ArgumentException)
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsync(new ErrorDetails { StatusCode = 400, Message = exception.Message }.ToString());
+        }
         else
         {
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;

@@ -1,10 +1,9 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using MinimalApi.Endpoint;
 
@@ -13,7 +12,7 @@ namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
 /// <summary>
 /// Updates a Catalog Item
 /// </summary>
-public class UpdateCatalogItemEndpoint : IEndpoint<IResult, UpdateCatalogItemRequest, IRepository<CatalogItem>>
+public class UpdateCatalogItemEndpoint : IEndpoint<IResult, UpdateCatalogItemRequest, ICatalogClient>
 { 
     private readonly IUriComposer _uriComposer;
 
@@ -26,30 +25,21 @@ public class UpdateCatalogItemEndpoint : IEndpoint<IResult, UpdateCatalogItemReq
     {
         app.MapPut("api/catalog-items",
             [Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
-            (UpdateCatalogItemRequest request, IRepository<CatalogItem> itemRepository) =>
+            (UpdateCatalogItemRequest request, ICatalogClient catalogClient) =>
             {
-                return await HandleAsync(request, itemRepository);
+                return await HandleAsync(request, catalogClient);
             })
             .Produces<UpdateCatalogItemResponse>()
             .WithTags("CatalogItemEndpoints");
     }
 
-    public async Task<IResult> HandleAsync(UpdateCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
+    public async Task<IResult> HandleAsync(UpdateCatalogItemRequest request, ICatalogClient catalogClient)
     {
         var response = new UpdateCatalogItemResponse(request.CorrelationId());
 
-        var existingItem = await itemRepository.GetByIdAsync(request.Id);
-        if (existingItem == null)
-        {
-            return Results.NotFound();
-        }
-
-        CatalogItem.CatalogItemDetails details = new(request.Name, request.Description, request.Price);
-        existingItem.UpdateDetails(details);
-        existingItem.UpdateBrand(request.CatalogBrandId);
-        existingItem.UpdateType(request.CatalogTypeId);
-
-        await itemRepository.UpdateAsync(existingItem);
+        var existingItem = await catalogClient.UpdateItemAsync(request.Id, new Microsoft.eShopWeb.Catalog.Contracts.CatalogItemWrite(
+            request.Name, request.Description, request.Price, request.CatalogBrandId, request.CatalogTypeId));
+        if (existingItem is null) return Results.NotFound();
 
         var dto = new CatalogItemDto
         {

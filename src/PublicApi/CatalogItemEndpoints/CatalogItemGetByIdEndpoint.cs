@@ -1,8 +1,7 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using MinimalApi.Endpoint;
 
@@ -11,7 +10,7 @@ namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
 /// <summary>
 /// Get a Catalog Item by Id
 /// </summary>
-public class CatalogItemGetByIdEndpoint : IEndpoint<IResult, GetByIdCatalogItemRequest, IRepository<CatalogItem>>
+public class CatalogItemGetByIdEndpoint : IEndpoint<IResult, GetByIdCatalogItemRequest, ICatalogClient>
 {
     private readonly IUriComposer _uriComposer;
 
@@ -23,19 +22,19 @@ public class CatalogItemGetByIdEndpoint : IEndpoint<IResult, GetByIdCatalogItemR
     public void AddRoute(IEndpointRouteBuilder app)
     {
         app.MapGet("api/catalog-items/{catalogItemId}",
-            async (int catalogItemId, IRepository<CatalogItem> itemRepository) =>
+            async (int catalogItemId, ICatalogClient catalogClient) =>
             {
-                return await HandleAsync(new GetByIdCatalogItemRequest(catalogItemId), itemRepository);
+                return await HandleAsync(new GetByIdCatalogItemRequest(catalogItemId), catalogClient);
             })
             .Produces<GetByIdCatalogItemResponse>()
             .WithTags("CatalogItemEndpoints");
     }
 
-    public async Task<IResult> HandleAsync(GetByIdCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
+    public async Task<IResult> HandleAsync(GetByIdCatalogItemRequest request, ICatalogClient catalogClient)
     {
         var response = new GetByIdCatalogItemResponse(request.CorrelationId());
 
-        var item = await itemRepository.GetByIdAsync(request.CatalogItemId);
+        var item = await catalogClient.GetItemByIdAsync(request.CatalogItemId);
         if (item is null)
             return Results.NotFound();
 

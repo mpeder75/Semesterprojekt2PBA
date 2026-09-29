@@ -14,7 +14,10 @@ public static class ConfigureWebServices
         services.AddScoped<CatalogViewModelService>();
         services.AddScoped<ICatalogItemViewModelService, CatalogItemViewModelService>();
         services.Configure<CatalogSettings>(configuration);
-        services.AddScoped<ICatalogViewModelService, CachedCatalogViewModelService>();
+        if (configuration.GetValue<bool>("FeatureFlags:UseCatalogApi"))
+            services.AddScoped<ICatalogViewModelService, CatalogViewModelService>();
+        else
+            services.AddScoped<ICatalogViewModelService, CachedCatalogViewModelService>();
 
         return services;
     }

@@ -2,6 +2,8 @@
 
 > Konvertering af Monolit til Microservices vha. Strangler Pattern
 
+Catalog is implemented as a separate service with a feature toggle. See [CatalogExtraction.md](CatalogExtraction.md) for the architecture, startup, migration, rollback, and test instructions.
+
 ## 🔗 Links
 
 | Ressource                     | Link                                                                                |

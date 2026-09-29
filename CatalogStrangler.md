@@ -1,5 +1,7 @@
 # Catalog Strangler — praktisk template (start her)
 
+> Implemented service and feature-toggle guide: [CatalogExtraction.md](CatalogExtraction.md). The steps below are the original planning template; use the implementation guide for current commands and migration/rollback behavior.
+
 Formål: en direkte, praktisk fremgangsmåde I kan følge når I vil udtrække Catalog. Ingen lange analyser — kun trin I kan gøre i kode samme dag.
 
 ### Overordnet rækkefølge (kort):

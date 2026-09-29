@@ -1,0 +1,38 @@
+# Add this last: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.catalog.yml up --build
+services:
+  eshopwebmvc:
+    environment:
+      FeatureFlags__UseCatalogApi: "true"
+      CatalogApi__BaseUrl: http://catalogapi:8080/
+      CatalogApi__ApiKey: ${CATALOG_API_KEY:?Set CATALOG_API_KEY}
+    depends_on:
+      - catalogapi
+  eshoppublicapi:
+    environment:
+      FeatureFlags__UseCatalogApi: "true"
+      CatalogApi__BaseUrl: http://catalogapi:8080/
+      CatalogApi__ApiKey: ${CATALOG_API_KEY:?Set CATALOG_API_KEY}
+    depends_on:
+      - catalogapi
+  catalogapi:
+    build:
+      context: .
+      dockerfile: src/Catalog.Api/Dockerfile
+    environment:
+      ConnectionStrings__CatalogDatabase: Server=catalogsql;Database=CatalogService;User Id=sa;Password=${CATALOG_SQL_PASSWORD:?Set CATALOG_SQL_PASSWORD};TrustServerCertificate=true
+      CatalogApi__ApiKey: ${CATALOG_API_KEY:?Set CATALOG_API_KEY}
+      SeedDemoData: ${CATALOG_SEED_DEMO:-false}
+    ports:
+      - "127.0.0.1:5300:8080"
+    depends_on:
+      - catalogsql
+    restart: on-failure
+  catalogsql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${CATALOG_SQL_PASSWORD:?Set CATALOG_SQL_PASSWORD}
+    volumes:
+      - catalog-service-data:/var/opt/mssql
+volumes:
+  catalog-service-data:

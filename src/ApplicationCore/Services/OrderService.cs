@@ -1,7 +1,6 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Threading.Tasks;
 using Ardalis.GuardClauses;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
@@ -14,17 +13,17 @@ public class OrderService : IOrderService
     private readonly IRepository<Order> _orderRepository;
     private readonly IUriComposer _uriComposer;
     private readonly IRepository<Basket> _basketRepository;
-    private readonly IRepository<CatalogItem> _itemRepository;
+    private readonly ICatalogClient _catalogClient;
 
     public OrderService(IRepository<Basket> basketRepository,
-        IRepository<CatalogItem> itemRepository,
+        ICatalogClient catalogClient,
         IRepository<Order> orderRepository,
         IUriComposer uriComposer)
     {
         _orderRepository = orderRepository;
         _uriComposer = uriComposer;
         _basketRepository = basketRepository;
-        _itemRepository = itemRepository;
+        _catalogClient = catalogClient;
     }
 
     public async Task CreateOrderAsync(int basketId, Address shippingAddress)
@@ -35,8 +34,7 @@ public class OrderService : IOrderService
         Guard.Against.Null(basket, nameof(basket));
         Guard.Against.EmptyBasketOnCheckout(basket.Items);
 
-        var catalogItemsSpecification = new CatalogItemsSpecification(basket.Items.Select(item => item.CatalogItemId).ToArray());
-        var catalogItems = await _itemRepository.ListAsync(catalogItemsSpecification);
+        var catalogItems = await _catalogClient.GetItemsByIdsAsync(basket.Items.Select(item => item.CatalogItemId).ToArray());
 
         var items = basket.Items.Select(basketItem =>
         {

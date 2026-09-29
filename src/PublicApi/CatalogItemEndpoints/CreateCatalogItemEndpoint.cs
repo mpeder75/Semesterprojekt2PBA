@@ -1,13 +1,11 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Exceptions;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
-using Microsoft.eShopWeb.ApplicationCore.Specifications;
 using MinimalApi.Endpoint;
 
 namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
@@ -15,7 +13,7 @@ namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
 /// <summary>
 /// Creates a new Catalog Item
 /// </summary>
-public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemRequest, IRepository<CatalogItem>>
+public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemRequest, ICatalogClient>
 {
     private readonly IUriComposer _uriComposer;
 
@@ -28,37 +26,20 @@ public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemReq
     {
         app.MapPost("api/catalog-items",
             [Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
-            (CreateCatalogItemRequest request, IRepository<CatalogItem> itemRepository) =>
+            (CreateCatalogItemRequest request, ICatalogClient catalogClient) =>
             {
-                return await HandleAsync(request, itemRepository);
+                return await HandleAsync(request, catalogClient);
             })
             .Produces<CreateCatalogItemResponse>()
             .WithTags("CatalogItemEndpoints");
     }
 
-    public async Task<IResult> HandleAsync(CreateCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
+    public async Task<IResult> HandleAsync(CreateCatalogItemRequest request, ICatalogClient catalogClient)
     {
         var response = new CreateCatalogItemResponse(request.CorrelationId());
 
-        var catalogItemNameSpecification = new CatalogItemNameSpecification(request.Name);
-        var existingCataloogItem = await itemRepository.CountAsync(catalogItemNameSpecification);
-        if (existingCataloogItem > 0)
-        {
-            throw new DuplicateException($"A catalogItem with name {request.Name} already exists");
-        }
-
-        var newItem = new CatalogItem(request.CatalogTypeId, request.CatalogBrandId, request.Description, request.Name, request.Price, request.PictureUri);
-        newItem = await itemRepository.AddAsync(newItem);
-
-        if (newItem.Id != 0)
-        {
-            //We disabled the upload functionality and added a default/placeholder image to this sample due to a potential security risk 
-            //  pointed out by the community. More info in this issue: https://github.com/dotnet-architecture/eShopOnWeb/issues/537 
-            //  In production, we recommend uploading to a blob storage and deliver the image via CDN after a verification process.
-
-            newItem.UpdatePictureUri("eCatalog-item-default.png");
-            await itemRepository.UpdateAsync(newItem);
-        }
+        var newItem = await catalogClient.CreateItemAsync(new Microsoft.eShopWeb.Catalog.Contracts.CatalogItemWrite(
+            request.Name, request.Description, request.Price, request.CatalogBrandId, request.CatalogTypeId));
 
         var dto = new CatalogItemDto
         {

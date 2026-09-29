@@ -15,5 +15,10 @@ public class MappingProfile : Profile
             .ForMember(dto => dto.Name, options => options.MapFrom(src => src.Type));
         CreateMap<CatalogBrand, CatalogBrandDto>()
             .ForMember(dto => dto.Name, options => options.MapFrom(src => src.Brand));
+        CreateMap<Microsoft.eShopWeb.Catalog.Contracts.CatalogItemDto, CatalogItemDto>();
+        CreateMap<Microsoft.eShopWeb.Catalog.Contracts.CatalogTypeDto, CatalogTypeDto>()
+            .ForMember(dto => dto.Name, options => options.MapFrom(src => src.Type));
+        CreateMap<Microsoft.eShopWeb.Catalog.Contracts.CatalogBrandDto, CatalogBrandDto>()
+            .ForMember(dto => dto.Name, options => options.MapFrom(src => src.Brand));
     }
 }

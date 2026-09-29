@@ -1,10 +1,9 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using MinimalApi.Endpoint;
 
@@ -13,7 +12,7 @@ namespace Microsoft.eShopWeb.PublicApi.CatalogBrandEndpoints;
 /// <summary>
 /// List Catalog Brands
 /// </summary>
-public class CatalogBrandListEndpoint : IEndpoint<IResult, IRepository<CatalogBrand>>
+public class CatalogBrandListEndpoint : IEndpoint<IResult, ICatalogClient>
 {
     private readonly IMapper _mapper;
 
@@ -25,19 +24,19 @@ public class CatalogBrandListEndpoint : IEndpoint<IResult, IRepository<CatalogBr
     public void AddRoute(IEndpointRouteBuilder app)
     {
         app.MapGet("api/catalog-brands",
-            async (IRepository<CatalogBrand> catalogBrandRepository) =>
+            async (ICatalogClient catalogClient) =>
             {
-                return await HandleAsync(catalogBrandRepository);
+                return await HandleAsync(catalogClient);
             })
            .Produces<ListCatalogBrandsResponse>()
            .WithTags("CatalogBrandEndpoints");
     }
 
-    public async Task<IResult> HandleAsync(IRepository<CatalogBrand> catalogBrandRepository)
+    public async Task<IResult> HandleAsync(ICatalogClient catalogClient)
     {
         var response = new ListCatalogBrandsResponse();
 
-        var items = await catalogBrandRepository.ListAsync();
+        var items = await catalogClient.GetBrandsAsync();
 
         response.CatalogBrands.AddRange(items.Select(_mapper.Map<CatalogBrandDto>));
 

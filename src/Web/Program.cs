@@ -128,7 +128,8 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var catalogContext = scopedProvider.GetRequiredService<CatalogContext>();
-        await CatalogContextSeed.SeedAsync(catalogContext, app.Logger);
+        await CatalogContextSeed.SeedAsync(catalogContext, app.Logger,
+            seedCatalog: !builder.Configuration.GetValue<bool>("FeatureFlags:UseCatalogApi"));
 
         var userManager = scopedProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = scopedProvider.GetRequiredService<RoleManager<IdentityRole>>();
@@ -185,6 +186,15 @@ else
 }
 
 app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    try { await next(); }
+    catch (Microsoft.eShopWeb.ApplicationCore.Exceptions.CatalogUnavailableException)
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsync("Catalog is temporarily unavailable. Please try again later.");
+    }
+});
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
