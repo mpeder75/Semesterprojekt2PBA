@@ -1,5 +1,5 @@
 ﻿using CatalogService.api.Entities;
-using CatalogService.api.Interfacess;
+using CatalogService.api.Interfaces;
 
 namespace Microsoft.eShopWeb.ApplicationCore.Entities;
 
