@@ -5,6 +5,7 @@ using Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Specifications;
+using Microsoft.eShopWeb.ApplicationCore.Exceptions;
 
 namespace Microsoft.eShopWeb.ApplicationCore.Services;
 
@@ -35,6 +36,8 @@ public class OrderService : IOrderService
         Guard.Against.EmptyBasketOnCheckout(basket.Items);
 
         var catalogItems = await _catalogClient.GetItemsByIdsAsync(basket.Items.Select(item => item.CatalogItemId).ToArray());
+        if (basket.Items.Any(item => !catalogItems.Any(product => product.Id == item.CatalogItemId)))
+            throw new UnavailableBasketItemsException();
 
         var items = basket.Items.Select(basketItem =>
         {

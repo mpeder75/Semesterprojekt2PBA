@@ -13,6 +13,10 @@
 
     @if (Model.BasketModel.Items.Any())
     {
+        @if (Model.BasketModel.Items.Any(item => !item.IsAvailable))
+        {
+            <p class="text-danger" role="alert">Some products are no longer available. Set their quantity to 0 and select Update to remove them before checkout.</p>
+        }
         <form method="post">
             <article class="esh-basket-titles row">
                 <br />
@@ -71,7 +75,10 @@
                                 asp-page-handler="Update">
                             [ Update ]
                         </button>
-                        <a asp-page="./Checkout" class="btn esh-basket-checkout">[ Checkout ]</a>
+                        @if (Model.BasketModel.Items.All(item => item.IsAvailable))
+                        {
+                            <a asp-page="./Checkout" class="btn esh-basket-checkout">[ Checkout ]</a>
+                        }
                     </section>
                 </div>
             </div>

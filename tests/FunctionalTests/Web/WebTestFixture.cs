@@ -1,5 +1,6 @@
 ﻿using System;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,8 @@ public class TestApplication : WebApplicationFactory<IBasketViewModelService>
         // Add mock/test services to the builder here
         builder.ConfigureServices(services =>
         {
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
+            services.AddLogging(logging => logging.ClearProviders());
             var descriptors = services.Where(d =>
                                                 d.ServiceType == typeof(DbContextOptions<CatalogContext>) ||
                                                 d.ServiceType == typeof(DbContextOptions<AppIdentityDbContext>))

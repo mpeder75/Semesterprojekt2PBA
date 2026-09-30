@@ -11,7 +11,7 @@ public static class CatalogTransfer
 
     public static async Task<bool> RunAsync(string[] args, IServiceProvider services, IConfiguration configuration)
     {
-        var command = args.FirstOrDefault(a => a is "--import" or "--export" or "--export-legacy");
+        var command = args.FirstOrDefault(a => a is "--import" or "--export" or "--export-legacy" or "--restore-legacy" or "--verify-legacy");
         if (command is null) return false;
         var index = Array.IndexOf(args, command);
         if (index + 1 >= args.Length) throw new ArgumentException("Supply a snapshot file path.");
@@ -25,6 +25,28 @@ public static class CatalogTransfer
         }
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        if (command is "--restore-legacy" or "--verify-legacy")
+        {
+            if (!db.Database.IsSqlServer()) throw new InvalidOperationException("Rollback requires persistent SQL Server storage.");
+            var connection = configuration.GetConnectionString("LegacyCatalog")
+                ?? throw new InvalidOperationException("Set ConnectionStrings__LegacyCatalog.");
+            var current = await SnapshotAsync(db);
+            var legacy = await ReadLegacyAsync(connection);
+            if (command == "--restore-legacy")
+            {
+                // Preserve the original data before making any change; refuse an existing backup path.
+                await WriteAsync(path, legacy);
+                await CatalogRollback.RestoreAsync(connection, current);
+            }
+            else
+            {
+                if (JsonSerializer.Serialize(current, Json) != JsonSerializer.Serialize(legacy, Json))
+                    throw new InvalidOperationException("Catalog databases differ. Do not switch the feature flag. Stop writers and reconcile with --restore-legacy first.");
+                await WriteAsync(path, current);
+            }
+            Console.WriteLine("Catalog data verified. Restart both monolith hosts together when changing the feature flag.");
+            return true;
+        }
         if (command == "--export")
             await WriteAsync(path, await SnapshotAsync(db));
         else
@@ -32,7 +54,7 @@ public static class CatalogTransfer
             if (!db.Database.IsSqlServer()) throw new InvalidOperationException("Offline import requires persistent SQL Server storage.");
             var snapshot = JsonSerializer.Deserialize<CatalogSnapshot>(await File.ReadAllTextAsync(path), Json)
                 ?? throw new ArgumentException("Snapshot is empty.");
-            await db.Database.EnsureCreatedAsync();
+            await CatalogSchema.InitializeAsync(db);
             await ImportAsync(db, snapshot);
         }
         return true;
@@ -101,10 +123,16 @@ public static class CatalogTransfer
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
+        return await ReadLegacyAsync(connection);
+    }
+
+    internal static async Task<CatalogSnapshot> ReadLegacyAsync(SqlConnection connection, SqlTransaction? transaction = null)
+    {
         var brands = new List<CatalogBrandDto>();
         var types = new List<CatalogTypeDto>();
         var items = new List<CatalogItemDto>();
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT Id, Brand FROM CatalogBrands ORDER BY Id; SELECT Id, Type FROM CatalogTypes ORDER BY Id; SELECT Id, Name, Description, Price, PictureUri, CatalogBrandId, CatalogTypeId FROM Catalog ORDER BY Id;";
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync()) brands.Add(new(reader.GetInt32(0), reader.GetString(1)));

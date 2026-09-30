@@ -1,6 +1,6 @@
 # Catalog Strangler — praktisk template (start her)
 
-> Implemented service and feature-toggle guide: [CatalogExtraction.md](CatalogExtraction.md). The steps below are the original planning template; use the implementation guide for current commands and migration/rollback behavior.
+> Historical planning draft. Use [CatalogExtraction.md](CatalogExtraction.md) for the current extraction sequence and [CatalogRecovery.md](CatalogRecovery.md) for upgrade/rollback procedures. The draft below predates the implemented migrations, safe creation retries and coordinated data cutover; its read-first and partial-instance rollout suggestions are not the current procedure for separate, unsynchronized databases.
 
 Formål: en direkte, praktisk fremgangsmåde I kan følge når I vil udtrække Catalog. Ingen lange analyser — kun trin I kan gøre i kode samme dag.
 

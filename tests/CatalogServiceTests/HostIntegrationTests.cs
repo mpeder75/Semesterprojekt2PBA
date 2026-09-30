@@ -72,6 +72,36 @@ public class HostIntegrationTests
     }
 
     [Fact]
+    public async Task DeletedProductStaysVisibleAsUnavailableAndCannotBecomeAnOrder()
+    {
+        using var catalog = new CatalogFactory();
+        using var web = new WebApplicationFactory<IBasketViewModelService>().WithWebHostBuilder(builder => Configure(builder, catalog));
+        using var http = web.CreateClient();
+        using var scope = web.Services.CreateScope();
+        var baskets = scope.ServiceProvider.GetRequiredService<IBasketService>();
+        var basket = await baskets.AddItemToBasket("deleted-product-buyer", 1, 19.5m);
+        var orders = scope.ServiceProvider.GetRequiredService<IOrderService>();
+        var address = new Address("Street", "City", "State", "Country", "1234");
+        await orders.CreateOrderAsync(basket.Id, address);
+        using var remote = catalog.AuthorizedClient();
+        Assert.Equal(HttpStatusCode.NoContent, (await remote.DeleteAsync("/catalog/items/1")).StatusCode);
+
+        var view = await scope.ServiceProvider.GetRequiredService<IBasketViewModelService>().Map(basket);
+        var item = Assert.Single(view.Items);
+        Assert.False(item.IsAvailable);
+        Assert.Equal(1, item.CatalogItemId);
+        Assert.Equal("Unavailable product", item.ProductName);
+        await Assert.ThrowsAsync<Microsoft.eShopWeb.ApplicationCore.Exceptions.UnavailableBasketItemsException>(
+            () => orders.CreateOrderAsync(basket.Id, address));
+        var db = scope.ServiceProvider.GetRequiredService<CatalogContext>();
+        var saved = Assert.Single(await db.Orders.Include(o => o.OrderItems).ToListAsync());
+        Assert.Equal(".NET Bot Black Sweatshirt", Assert.Single(saved.OrderItems).ItemOrdered.ProductName);
+        Assert.Equal(19.5m, Assert.Single(saved.OrderItems).UnitPrice);
+        var cleared = await baskets.SetQuantities(basket.Id, new Dictionary<string, int> { [item.Id.ToString()] = 0 });
+        Assert.Empty(cleared.Value.Items);
+    }
+
+    [Fact]
     public async Task PublicApiKeepsAdminAuthorizationAndRoutesWritesToCatalog()
     {
         using var catalog = new CatalogFactory();

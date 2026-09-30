@@ -1,5 +1,25 @@
 # Catalog microservice and feature toggle
 
+Last checked against the implementation: **2026-09-30**.
+
+This is the current extraction and implementation guide. [CatalogRecovery.md](CatalogRecovery.md) contains the detailed upgrade and rollback procedures; [MicroserviceHurdles.md](MicroserviceHurdles.md) records the problems and their solutions. `CatalogStrangler.md` is the original planning draft.
+
+## Extraction sequence
+
+Use this order when repeating the extraction from a monolith:
+
+1. **Define ownership.** Catalog owns products, brands, types and their validation. Baskets, orders, identity and image hosting keep their existing owners.
+2. **Find every consumer.** Include browsing, basket display, checkout, Razor administration and PublicApi administration. Record their reads, writes and product references.
+3. **Create the internal boundary.** Route all consumers through `ICatalogClient` with DTOs. Initially use `RepositoryCatalogClient` so behaviour can be checked before introducing HTTP.
+4. **Build the independent service.** Give Catalog its own model, SQL database, EF migrations and API. Share the contract rather than database entities. Keep foreign keys for Catalog-owned brands/types inside this database.
+5. **Handle dependencies and writes.** Keep external product IDs required where the business relationship is required. Preserve order snapshots, handle missing basket products, enforce unique product names, and persist idempotency results for safe creation retries.
+6. **Connect and verify.** Add `HttpCatalogClient` behind the feature flag. Test both paths, unavailable products, service failures, concurrent writes, lost responses and SQL persistence. Register PublicApi endpoints explicitly.
+7. **Move the data.** Stop Catalog writers, back up, export from the monolith, import into an empty migration-managed database, and compare snapshots. Preserve IDs. An older Catalog database created with `EnsureCreated` requires the separate upgrade procedure in the recovery guide.
+8. **Switch callers together.** Start and verify Catalog, then restart Web and PublicApi with the flag ON. Verify complete business flows before reopening writes. Reconcile and verify data before any later switch back.
+9. **Retire the old path after stable operation.** Remove the temporary toggle and legacy Catalog implementation/tables once rollback is no longer needed. Keep the context and tables still used by baskets and orders.
+
+The implementation and recovery tools are complete for these steps. A live cutover and retirement of existing application tables have not been performed.
+
 ## What is implemented
 
 Catalog now has its own runnable .NET 8 project, `src/Catalog.Api`, its own data model, and its own SQL Server database. It supports product reads, creation, updates, deletion, brands, and types. Web and PublicApi can switch all catalog access between the legacy repositories and the microservice.
@@ -21,10 +41,12 @@ PublicApi: existing routes used by Blazor admin
      Legacy catalog tables     Catalog.Api
      in monolith database          |
                             CatalogService database
-                            Items / Brands / Types
+                     Items / Brands / Types / CatalogRequests
 ```
 
 Baskets, orders, identity, and product image files remain in the existing application. Orders continue storing product snapshots, so later catalog edits do not rewrite order history. The service returns image paths; Web/PublicApi continue composing browser-facing URLs.
+
+Baskets and order snapshots store required `CatalogItemId` values as logical references, without database foreign keys into Catalog. Nullability depends on whether the relationship is optional. Catalog's own product-to-brand/type relationships use local foreign keys. `CatalogRequests` stores successful creation request keys and original responses; include it in full database backups.
 
 ## Why these changes were made
 
@@ -40,6 +62,12 @@ Baskets, orders, identity, and product image files remain in the existing applic
 | Disable Web catalog view-model caching when ON | Avoids showing stale cached products after service-side edits. Existing Blazor client caching remains; refresh the admin UI when comparing data after migration. |
 | Added deterministic product ordering by ID | Pagination must have the same stable ordering in local and remote implementations. |
 | Added offline import/export | Preserves IDs referenced by existing baskets/orders and avoids silently overwriting data. |
+| Added service-owned EF migrations | Tracks schema changes; existing pre-migration Catalog databases are preserved during a verified export/import upgrade. |
+| Handle missing products explicitly | Deleted products remain removable from baskets; checkout rejects missing references before saving an order. |
+| Enforce unique product names in SQL | Protects creation and updates even when requests arrive concurrently. |
+| Persist creation request results | Allows one client retry with the same idempotency key without creating a second product. |
+| Added offline rollback reconciliation and verification | Backs up legacy data and restores service-side changes before callers switch back. |
+| Register PublicApi endpoints explicitly | Avoids startup failures caused by scanning unrelated loaded assemblies. |
 | Added tests for toggle selection, HTTP contracts, auth, checkout, and SQL transfer | Verifies both migration paths and the boundaries most likely to break during extraction. |
 
 ## Toggle behavior
@@ -69,7 +97,7 @@ $env:CatalogApi__ApiKey = "<same-secret-as-Catalog.Api>"
 $env:CatalogApi__TimeoutSeconds = "5"
 ```
 
-The client does not retry writes or silently fall back to the legacy database. On connection failure, timeout, or service failure, Web/PublicApi return HTTP 503. A timeout can leave a write outcome uncertain; check the catalog before manually retrying a create. Cancellation supplied by a caller is preserved.
+The client never silently falls back to the legacy database. Product creation sends an `Idempotency-Key` and retries once with the same key on a temporary service failure. Catalog saves the original response with the product in one SQL transaction; concurrent retries are serialized across service instances. Other writes are not automatically retried. Persistent failures return HTTP 503. Cancellation supplied by a caller is preserved. A manually repeated create is a new operation unless its caller reuses the original key.
 
 ## Run a fresh learning demo locally
 
@@ -127,6 +155,10 @@ All `/catalog` endpoints require the `X-Catalog-Key` header. `/health` is unauth
 | `PUT /catalog/items/{id}` | Update details, price, brand, type; preserves the image; 200 or 404. |
 | `DELETE /catalog/items/{id}` | 204 or 404. |
 
+Product names are unique within Catalog, enforced for both creation and updates by a database unique index. Equality follows the SQL database collation. Conflicts return 409. Missing products remain visible as unavailable basket items; customers remove them by setting quantity to zero. Checkout validates product references again before saving an order.
+
+`POST /catalog/items` accepts an optional `Idempotency-Key` of 1–200 characters. The same key and payload replay the original 201 response; reusing it with a different payload returns 422. Successful results are retained without automatic expiry, including after product edits or deletion. In-memory demos lose these records on restart. See the recovery guide for the complete retry contract.
+
 Create/update body:
 
 ```json
@@ -139,7 +171,7 @@ The service key is a server credential, not a browser credential. Existing Web c
 
 ## Migrate existing SQL catalog data
 
-The service includes offline commands; none starts the HTTP listener. Perform the following during a maintenance window with catalog writers stopped, and take a backup first. Keep the flag OFF until import and verification complete.
+The service includes offline commands; none starts the HTTP listener. Perform the following during a maintenance window with all Catalog writers stopped, and take a backup first. Keep the flag OFF until import and verification complete. The destination must be a new database or an empty database already managed by Catalog migrations; an existing `EnsureCreated` Catalog database needs the upgrade procedure in [CatalogRecovery.md](CatalogRecovery.md).
 
 ```powershell
 New-Item -ItemType Directory -Force artifacts | Out-Null
@@ -163,9 +195,9 @@ Compare the two JSON snapshots and counts. Start Catalog, verify reads, then res
 
 ## Rollback and ownership
 
-Before any service-side writes, if the legacy and service datasets still match, stop traffic, restart both callers with the flag OFF, and resume traffic. Restarting also clears server-side caches.
+Before any service-side writes, stop traffic and writers, use `--verify-legacy` to confirm that both datasets still match, then restart both callers with the flag OFF and resume traffic. Restarting also clears server-side caches. Verification is valid for the switch only while writers remain stopped.
 
-After service-side writes, the legacy dataset is stale. Do **not** just flip the flag. Stop writes, export the current service data with `--export`, reconcile it into the legacy database while preserving IDs and handling deletions, verify it, and only then switch both callers OFF. Automated reverse migration and live synchronization are not implemented. Repairing the service while keeping it authoritative is often preferable.
+After service-side writes, the legacy dataset is stale. Do **not** just flip the flag. Stop all Catalog writers, then use `--restore-legacy` to back up and transactionally reconcile the legacy data, followed by `--verify-legacy`. See [CatalogRecovery.md](CatalogRecovery.md) for exact commands and schema upgrades. Live synchronization is not implemented. Repairing the service while keeping it authoritative is often preferable.
 
 The OFF path is retained intentionally for this migration. Once the team no longer needs it, remove the legacy implementation and catalog entities/tables through a separately reviewed database migration. Never drop the old combined `CatalogContext`, because it also owns baskets and orders.
 
@@ -185,7 +217,7 @@ The API is available locally on port 5300. The new SQL container is internal to 
 
 ## Validation and limitations
 
-Verified on this machine: **88 tests passed** (45 unit, 6 integration, 12 functional, 15 PublicApi integration, and 10 Catalog service tests). The real SQL smoke test passed, including snapshot equality, ID preservation, new identity values, and persistence after restarting the API. Compose configuration validation and `git diff --check` passed. Container build/start was not tested because the Docker engine was not running.
+Latest verification: **92 tests passed** (45 unit, 6 integration, 12 functional, 15 PublicApi integration, and 14 Catalog service tests). SQL checks cover migrations, snapshot equality, ID preservation, persistence after restart, concurrent creates across two service instances, and rollback reconciliation. Container build/start has not been verified for these changes.
 
 Tests are in `tests/CatalogServiceTests`, plus the earlier unit/integration regression tests. They cover both toggle paths, CRUD, filtering/pagination, missing IDs, authorization, failure without fallback, ID-preserving snapshots, storefront rendering, basket mapping, checkout snapshots, and PublicApi writes while the monolith's catalog tables are empty.
 
@@ -195,8 +227,8 @@ dotnet build src/Catalog.Api/Catalog.Api.csproj
 ./scripts/Test-CatalogSql.ps1
 ```
 
-The SQL smoke script creates uniquely named temporary databases, exports a legacy catalog, imports it, checks identical snapshots and generated IDs, starts the real API, verifies data survives a process restart, and drops only its temporary databases. It requires LocalDB/SQL Server, `sqlcmd`, and a prior Debug build. Test logs/snapshots go under ignored `artifacts/`.
+The SQL smoke script uses uniquely named temporary databases. It checks ID-preserving import, the old-schema upgrade guard, migrations, restart persistence, concurrent requests to two service instances, name uniqueness, saved idempotency results, successful rollback, transaction rollback on failure, and safe legacy ID allocation. It drops only its temporary databases. It requires LocalDB/SQL Server, `sqlcmd`, and a prior Debug build. Test logs/snapshots go under ignored `artifacts/`.
 
-Schema bootstrap currently uses EF `EnsureCreated`, suitable for the initial learning deployment. It does not upgrade an existing database schema. Add a deliberate migrations strategy before evolving a deployed catalog schema. The current service is a synchronous extraction: events, live data replication, distributed transactions, and a production identity provider are outside this change.
+SQL schema management now uses EF migrations. `--migrate` applies them without starting the API; startup and import also initialize a migration-managed database. Existing databases made with `EnsureCreated` require a verified export/import into a new database; they are not silently modified or baselined. See [CatalogRecovery.md](CatalogRecovery.md). In-memory demos remain disposable. The current service is a synchronous extraction: events, live data replication, distributed transactions, and a production identity provider are outside this change.
 
 The repository still has its pre-existing invalid SDK pin (`8.0.x`) in `global.json`; this machine ignores it and uses SDK 10 to build net8.0 projects, with .NET 8 installed to run them. Existing package security warnings are not addressed by this extraction.

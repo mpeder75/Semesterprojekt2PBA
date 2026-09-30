@@ -43,9 +43,21 @@ public class HttpCatalogClient : ICatalogClient
     public Task<IReadOnlyList<CatalogTypeDto>> GetTypesAsync(CancellationToken cancellationToken = default) =>
         ReadAsync<IReadOnlyList<CatalogTypeDto>>(new HttpRequestMessage(HttpMethod.Get, "catalog/types"), cancellationToken);
 
-    public Task<CatalogItemDto> CreateItemAsync(CatalogItemWrite item, CancellationToken cancellationToken = default) =>
-        ReadAsync<CatalogItemDto>(new HttpRequestMessage(HttpMethod.Post, "catalog/items")
-        { Content = JsonContent.Create(item) }, cancellationToken);
+    public async Task<CatalogItemDto> CreateItemAsync(CatalogItemWrite item, CancellationToken cancellationToken = default)
+    {
+        var key = Guid.NewGuid().ToString("N");
+        for (var attempt = 0; ; attempt++)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "catalog/items") { Content = JsonContent.Create(item) };
+            request.Headers.Add("Idempotency-Key", key);
+            try { return await ReadAsync<CatalogItemDto>(request, cancellationToken); }
+            catch (CatalogUnavailableException) when (attempt == 0 && !cancellationToken.IsCancellationRequested)
+            {
+                // Same operation, same key: the service replays a committed result after a lost response.
+                await Task.Delay(100, cancellationToken);
+            }
+        }
+    }
 
     public async Task<CatalogItemDto?> UpdateItemAsync(int id, CatalogItemWrite item, CancellationToken cancellationToken = default)
     {
@@ -87,7 +99,7 @@ public class HttpCatalogClient : ICatalogClient
             using (response)
             {
                 if (response.StatusCode == HttpStatusCode.Conflict) throw new DuplicateException("A catalog item with this name already exists.");
-                if (response.StatusCode == HttpStatusCode.BadRequest) throw new ArgumentException("Catalog rejected the supplied item or query.");
+                if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity) throw new ArgumentException("Catalog rejected the supplied item, query, or idempotency key.");
                 response.EnsureSuccessStatusCode();
             }
             return response;

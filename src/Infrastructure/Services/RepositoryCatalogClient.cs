@@ -85,6 +85,9 @@ public class RepositoryCatalogClient : ICatalogClient
         await ValidateAsync(request, cancellationToken);
         var item = await _items.GetByIdAsync(id, cancellationToken);
         if (item is null) return null;
+        var matching = await _items.ListAsync(new CatalogItemNameSpecification(request.Name), cancellationToken);
+        if (matching.Any(existing => existing.Id != id))
+            throw new DuplicateException($"A catalogItem with name {request.Name} already exists");
         item.UpdateDetails(new CatalogItem.CatalogItemDetails(request.Name, request.Description, request.Price));
         item.UpdateBrand(request.CatalogBrandId);
         item.UpdateType(request.CatalogTypeId);

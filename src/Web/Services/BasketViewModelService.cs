@@ -55,7 +55,7 @@ public class BasketViewModelService : IBasketViewModelService
 
         var items = basketItems.Select(basketItem =>
         {
-            var catalogItem = catalogItems.First(c => c.Id == basketItem.CatalogItemId);
+            var catalogItem = catalogItems.FirstOrDefault(c => c.Id == basketItem.CatalogItemId);
 
             var basketItemViewModel = new BasketItemViewModel
             {
@@ -63,8 +63,9 @@ public class BasketViewModelService : IBasketViewModelService
                 UnitPrice = basketItem.UnitPrice,
                 Quantity = basketItem.Quantity,
                 CatalogItemId = basketItem.CatalogItemId,
-                PictureUrl = _uriComposer.ComposePicUri(catalogItem.PictureUri),
-                ProductName = catalogItem.Name
+                PictureUrl = catalogItem is null ? "/images/products/eCatalog-item-default.png" : _uriComposer.ComposePicUri(catalogItem.PictureUri),
+                ProductName = catalogItem?.Name ?? "Unavailable product",
+                IsAvailable = catalogItem is not null
             };
             return basketItemViewModel;
         }).ToList();

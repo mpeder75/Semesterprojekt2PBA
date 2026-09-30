@@ -15,6 +15,9 @@ using Microsoft.eShopWeb.Infrastructure.Logging;
 using Microsoft.eShopWeb.Infrastructure;
 using Microsoft.eShopWeb.PublicApi;
 using Microsoft.eShopWeb.PublicApi.Middleware;
+using Microsoft.eShopWeb.PublicApi.CatalogBrandEndpoints;
+using Microsoft.eShopWeb.PublicApi.CatalogTypeEndpoints;
+using Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -26,7 +29,14 @@ using MinimalApi.Endpoint.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddEndpoints();
+// Register only our endpoints; scanning every loaded assembly can load unrelated driver internals.
+builder.Services.AddSingleton<CatalogBrandListEndpoint>();
+builder.Services.AddSingleton<CatalogTypeListEndpoint>();
+builder.Services.AddSingleton<CatalogItemListPagedEndpoint>();
+builder.Services.AddSingleton<CatalogItemGetByIdEndpoint>();
+builder.Services.AddSingleton<CreateCatalogItemEndpoint>();
+builder.Services.AddSingleton<UpdateCatalogItemEndpoint>();
+builder.Services.AddSingleton<DeleteCatalogItemEndpoint>();
 
 // Use to force loading of appsettings.json of test project
 builder.Configuration.AddConfigurationFile("appsettings.test.json");
@@ -177,7 +187,13 @@ app.UseSwaggerUI(c =>
 });
 
 app.MapControllers();
-app.MapEndpoints();
+app.Services.GetRequiredService<CatalogBrandListEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<CatalogTypeListEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<CatalogItemListPagedEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<CatalogItemGetByIdEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<CreateCatalogItemEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<UpdateCatalogItemEndpoint>().AddRoute(app);
+app.Services.GetRequiredService<DeleteCatalogItemEndpoint>().AddRoute(app);
 
 app.Logger.LogInformation("LAUNCHING PublicApi");
 app.Run();

@@ -57,6 +57,12 @@ public class CheckoutModel : PageModel
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketService.DeleteBasketAsync(BasketModel.Id);
         }
+        catch (UnavailableBasketItemsException ex)
+        {
+            await SetBasketModelAsync();
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return Page();
+        }
         catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
         {
             //Redirect to Empty Basket page

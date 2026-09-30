@@ -35,11 +35,19 @@ public class ProductType
     public string Name { get; set; } = "";
 }
 
+public class CatalogRequest
+{
+    public string Key { get; set; } = "";
+    public string RequestHash { get; set; } = "";
+    public string ResponseJson { get; set; } = "";
+}
+
 public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbContext(options)
 {
     public DbSet<Product> Items => Set<Product>();
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<ProductType> Types => Set<ProductType>();
+    public DbSet<CatalogRequest> Requests => Set<CatalogRequest>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -47,11 +55,20 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
         {
             entity.ToTable("Items");
             entity.Property(p => p.Name).HasMaxLength(50).IsRequired();
+            entity.HasIndex(p => p.Name).IsUnique();
             entity.Property(p => p.Price).HasPrecision(18, 2);
             entity.HasOne<Brand>().WithMany().HasForeignKey(p => p.CatalogBrandId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ProductType>().WithMany().HasForeignKey(p => p.CatalogTypeId).OnDelete(DeleteBehavior.Restrict);
         });
         builder.Entity<Brand>().ToTable("Brands");
         builder.Entity<ProductType>().ToTable("Types");
+        builder.Entity<CatalogRequest>(entity =>
+        {
+            entity.ToTable("CatalogRequests");
+            entity.HasKey(r => r.Key);
+            entity.Property(r => r.Key).HasMaxLength(64);
+            entity.Property(r => r.RequestHash).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ResponseJson).IsRequired();
+        });
     }
 }

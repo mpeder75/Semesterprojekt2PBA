@@ -11,6 +11,10 @@
 
 <div class="container">
     <h1>Review</h1>
+    @if (Model.BasketModel.Items.Any(item => !item.IsAvailable))
+    {
+        <p class="text-danger" role="alert">Some products are no longer available. <a asp-page="Index">Return to your basket</a> and remove them before checkout.</p>
+    }
     @if (Model.BasketModel.Items.Any())
     {
         <form asp-page="Checkout" method="post">
@@ -67,7 +71,10 @@
                         <a asp-page="Index" class="btn esh-basket-checkout text-white">[ Back ]</a>
                     </section>
                     <section class="esh-basket-item col-xs-push-7 col-xs-4 text-right">
-                        <input type="submit" class="btn esh-basket-checkout" value="[ Pay Now ]" />
+                        @if (Model.BasketModel.Items.All(item => item.IsAvailable))
+                        {
+                            <input type="submit" class="btn esh-basket-checkout" value="[ Pay Now ]" />
+                        }
                     </section>
                 </div>
             </div>

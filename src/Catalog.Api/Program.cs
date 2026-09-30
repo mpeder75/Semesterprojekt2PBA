@@ -14,6 +14,13 @@ builder.Services.AddDbContext<CatalogDbContext>(options =>
 });
 var app = builder.Build();
 
+if (args.Contains("--migrate"))
+{
+    using var scope = app.Services.CreateScope();
+    await CatalogSchema.InitializeAsync(scope.ServiceProvider.GetRequiredService<CatalogDbContext>());
+    return;
+}
+
 // Offline import/export commands exit without starting the HTTP server.
 if (await CatalogTransfer.RunAsync(args, app.Services, app.Configuration)) return;
 
@@ -24,8 +31,7 @@ if (string.IsNullOrWhiteSpace(apiKey))
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-    // Initial schema bootstrap for this learning project; see documentation before schema upgrades.
-    await db.Database.EnsureCreatedAsync();
+    await CatalogSchema.InitializeAsync(db);
     if (app.Configuration.GetValue<bool>("SeedDemoData")) await CatalogTransfer.SeedDemoAsync(db);
 }
 
@@ -33,7 +39,8 @@ app.Use(async (context, next) =>
 {
     try { await next(); }
     catch (ArgumentException ex) { await Results.Problem(ex.Message, statusCode: 400).ExecuteAsync(context); }
-    catch (DbUpdateException) { await Results.Problem("Catalog data could not be saved.", statusCode: 409).ExecuteAsync(context); }
+    catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 })
+    { await Results.Problem("A catalog item with this name already exists.", statusCode: 409).ExecuteAsync(context); }
 });
 
 app.MapGet("/health", async (CatalogDbContext db, CancellationToken token) =>
@@ -73,22 +80,14 @@ catalog.MapGet("/brands", async (CatalogDbContext db, CancellationToken token) =
 catalog.MapGet("/types", async (CatalogDbContext db, CancellationToken token) =>
     Results.Ok(await db.Types.AsNoTracking().OrderBy(t => t.Id).Select(t => new CatalogTypeDto(t.Id, t.Name)).ToListAsync(token)));
 
-catalog.MapPost("/items", async (CatalogItemWrite request, CatalogDbContext db, CancellationToken token) =>
-{
-    await ValidateAsync(request, db, token);
-    if (await db.Items.AnyAsync(i => i.Name == request.Name, token)) return Results.Conflict();
-    var item = new Product { PictureUri = "/images/products/eCatalog-item-default.png" };
-    item.Update(request);
-    db.Items.Add(item);
-    await db.SaveChangesAsync(token);
-    return Results.Created($"/catalog/items/{item.Id}", item.ToDto());
-});
+catalog.MapPost("/items", CatalogWrites.CreateAsync);
 
 catalog.MapPut("/items/{id:int}", async (int id, CatalogItemWrite request, CatalogDbContext db, CancellationToken token) =>
 {
-    await ValidateAsync(request, db, token);
+    await CatalogWrites.ValidateAsync(request, db, token);
     var item = await db.Items.SingleOrDefaultAsync(i => i.Id == id, token);
     if (item is null) return Results.NotFound();
+    if (await db.Items.AnyAsync(i => i.Id != id && i.Name == request.Name, token)) return Results.Conflict();
     item.Update(request);
     await db.SaveChangesAsync(token);
     return Results.Ok(item.ToDto());
@@ -104,13 +103,5 @@ catalog.MapDelete("/items/{id:int}", async (int id, CatalogDbContext db, Cancell
 });
 
 app.Run();
-
-static async Task ValidateAsync(CatalogItemWrite request, CatalogDbContext db, CancellationToken token)
-{
-    CatalogValidation.Validate(request);
-    if (!await db.Brands.AnyAsync(b => b.Id == request.CatalogBrandId, token) ||
-        !await db.Types.AnyAsync(t => t.Id == request.CatalogTypeId, token))
-        throw new ArgumentException("Unknown catalog brand or type.");
-}
 
 namespace Microsoft.eShopWeb.Catalog.Api { public partial class CatalogApiMarker { } }
