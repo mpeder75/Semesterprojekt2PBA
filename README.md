@@ -39,7 +39,7 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 ## 🏗️ Arkitektur
 
-*(Tilføj arkitekturdiagram, ER diagream, Domain model her)*
+![ER-diagram](docs/images/ER_diagram.png)
 
 ---
 
