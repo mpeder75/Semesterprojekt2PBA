@@ -16,8 +16,9 @@ Sidst opdateret: 2026-10-20
 | Repository-interfaces (`IRepository<T>` / `IReadRepository<T>`) | Færdig | Branch `feature/order-read-repository` |
 | `EfRepository<T>` + DI-registrering i `Program.cs` | Færdig | Bygger; ikke kørt endnu |
 | Specifications (`CustomerOrdersSpecification`, `OrderWithItemsByIdSpec`) | Færdig | Kopieret til `Specifications/` |
-| `MinimalApi.Endpoint` i csproj | Færdig | Mangler `AddEndpoints()` / `MapEndpoints()` + Swagger i `Program.cs` |
-| Read-endpoints (hent ordre, mine ordrer) | I gang (gruppen skriver selv) | Skal designes ud fra handlerne; Order har ingen eksisterende API at kopiere |
+| `MinimalApi.Endpoint`, `AddEndpoints()`/`MapEndpoints()`, Swagger i `Program.cs` | Færdig | Verificeret i Swagger |
+| Read-endpoint `GET api/orders/{orderId}` | Færdig | Testet i Swagger mod LocalDB (200, total 47,5) |
+| Read-endpoint `GET api/orders?buyerId=...` | I gang | Request/response oprettet; `OrderListByBuyerEndpoint.cs` mangler indhold |
 | Monolitten kalder servicen (handlers → HTTP-klient) | Ikke startet | Se beslutning nedenfor |
 | Routing via API Gateway til OrderService | Ikke startet | Selve strangler-snittet |
 | Migrering af eksisterende ordrer fra `CatalogDb` | Ikke afklaret | Se åbne spørgsmål |
