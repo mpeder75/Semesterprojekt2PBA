@@ -6,7 +6,7 @@ namespace CatalogService.api.Data;
 
 public class CatalogContext : DbContext
 {
-    #pragma waring disable CS8618
+    #pragma warning disable CS8618
     public CatalogContext(DbContextOptions<CatalogContext> options) : base(options) { }
 
     public DbSet<CatalogItem> CatalogItems { get; set; }
