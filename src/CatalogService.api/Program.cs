@@ -3,16 +3,18 @@ using CatalogService.api.Data;
 using CatalogService.api.Interfaces;
 using CatalogService.api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MinimalApi.Endpoint.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpoints();
 
-// Add services to the container.
-
 builder.Services.AddControllers();
+builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
+builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
 var catalogSettings = builder.Configuration.Get<CatalogSettings>() ?? new CatalogSettings();
 builder.Services.AddSingleton<IUriComposer>(new UriComposer(catalogSettings));
@@ -39,14 +41,20 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex) 
     {
-        
+        app.Logger.LogError(ex, "An error occurred seeding the DB.");
     }
 }
 
  // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    
+    app.UseSwagger();
+    app.UseSwaggerUI();
+    /*app.UseSwaggerUI(options => 
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
+        options.RoutePrefix = string.Empty;
+    });*/
 }
 
 app.UseHttpsRedirection();
@@ -54,5 +62,6 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapEndpoints();
 
 app.Run();
