@@ -105,6 +105,7 @@ PublishScripts/
 ##############################################
 .claude/
 CLAUDE.md
+docs/status.md
 .claudeignore
 
 ##############################################
