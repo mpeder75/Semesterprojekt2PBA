@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using OrderService.api.Data;
+using OrderService.api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,9 @@ builder.Services.AddDbContext<OrderDbContext>(c =>
     var connectionString = builder.Configuration.GetConnectionString("OrderConnection");
     c.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
 });
+
+builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
+builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
 
 var app = builder.Build();
 
