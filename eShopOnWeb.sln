@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.10.12217.157
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -44,6 +44,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CatalogService.api", "src\CatalogService.api\CatalogService.api.csproj", "{A3768443-F75F-42FC-9554-B1D74F52A3E6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderService.api", "src\OrderService.api\OrderService.api.csproj", "{1776CDC1-ACA3-4719-B753-565BD6E5FB24}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiGateway", "src\ApiGateway\ApiGateway.csproj", "{1D76C451-D7D4-49D6-BAFC-E4B388435515}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -103,6 +105,10 @@ Global
 		{1776CDC1-ACA3-4719-B753-565BD6E5FB24}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1776CDC1-ACA3-4719-B753-565BD6E5FB24}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1776CDC1-ACA3-4719-B753-565BD6E5FB24}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1D76C451-D7D4-49D6-BAFC-E4B388435515}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D76C451-D7D4-49D6-BAFC-E4B388435515}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D76C451-D7D4-49D6-BAFC-E4B388435515}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D76C451-D7D4-49D6-BAFC-E4B388435515}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -120,6 +126,7 @@ Global
 		{D53EF010-8F8C-4337-A059-456E19D8AE63} = {15EA4737-125B-4E6E-A806-E13B7EBCDCCF}
 		{A3768443-F75F-42FC-9554-B1D74F52A3E6} = {419A6ACE-0419-4315-A6FB-B0E63D39432E}
 		{1776CDC1-ACA3-4719-B753-565BD6E5FB24} = {419A6ACE-0419-4315-A6FB-B0E63D39432E}
+		{1D76C451-D7D4-49D6-BAFC-E4B388435515} = {419A6ACE-0419-4315-A6FB-B0E63D39432E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {49813262-5DA3-4D61-ABD3-493C74CE8C2B}
