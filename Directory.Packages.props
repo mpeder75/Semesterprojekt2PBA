@@ -58,6 +58,7 @@
     <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="6.5.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="6.5.0" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.FeatureManagement" Version="4.3.0" />
 
     <!-- Test -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(AspNetVersion)" />

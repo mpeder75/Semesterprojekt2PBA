@@ -1,11 +1,18 @@
 ﻿using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Yarp.ReverseProxy.Forwarder;
+using ApiGateway;
+using Microsoft.FeatureManagement;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddFeatureManagement();
+builder.Services.AddSingleton<CatalogRoutingSelection>();
+
 builder.Services.AddReverseProxy()
-    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
+    .AddConfigFilter<CatalogRoutingFilter>();
+
 
 builder.Services.AddRequestTimeouts();
 
@@ -55,6 +62,9 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<CatalogRoutingSelection>()
+    .InitializeAsync();
 
 app.UseRouting();
 app.UseRateLimiter();

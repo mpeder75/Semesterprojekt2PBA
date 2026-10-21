@@ -12,9 +12,10 @@ public class CatalogFilterPaginatedSpecification : Specification<CatalogItem>
         {
             take = int.MaxValue;
         }
-        Query
-            .Where(i => (!brandId.HasValue || i.CatalogBrandId == brandId) &&
-            (!typeId.HasValue || i.CatalogTypeId == typeId))
-            .Skip(skip).Take(take);
+        Query.Where(i => (!brandId.HasValue || i.CatalogBrandId == brandId) &&
+                (!typeId.HasValue || i.CatalogTypeId == typeId))
+             .OrderBy(i => i.Id)
+             .Skip(skip)
+             .Take(take);
     }
 }

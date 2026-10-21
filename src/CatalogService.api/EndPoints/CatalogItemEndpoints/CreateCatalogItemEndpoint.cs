@@ -27,13 +27,14 @@ public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemReq
     public void AddRoute(IEndpointRouteBuilder app)
     {
         app.MapPost("api/catalog-items",
-            //[Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
-            async (CreateCatalogItemRequest request, IRepository<CatalogItem> itemRepository) =>
+             async (CreateCatalogItemRequest request, IRepository<CatalogItem> itemRepository) =>
             {
                 return await HandleAsync(request, itemRepository);
             })
             .Produces<CreateCatalogItemResponse>()
+            .RequireAuthorization("CatalogAdministrators")
             .WithTags("CatalogItemEndpoints");
+
     }
 
     public async Task<IResult> HandleAsync(CreateCatalogItemRequest request, IRepository<CatalogItem> itemRepository)

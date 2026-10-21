@@ -5,8 +5,52 @@ using CatalogService.api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MinimalApi.Endpoint.Extensions;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"];
+if (string.IsNullOrWhiteSpace(jwtSigningKey) ||
+    Encoding.ASCII.GetByteCount(jwtSigningKey) < 32)
+{
+    throw new InvalidOperationException(
+        "Set Jwt:SigningKey to the existing development issuer's signing key (at least 32 bytes).");
+}
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.ASCII.GetBytes(jwtSigningKey)),
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            ClockSkew = TimeSpan.FromSeconds(30),
+            NameClaimType = ClaimTypes.Name,
+            RoleClaimType = ClaimTypes.Role,
+            // Temporary compatibility: the current local issuer omits iss/aud.
+            ValidateIssuer = false,
+            ValidateAudience = false
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("CatalogAdministrators", policy =>
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+            .RequireAuthenticatedUser()
+            .RequireRole("Administrators"));
+});
+
+
 builder.Services.AddEndpoints();
 
 builder.Services.AddControllers();
@@ -59,6 +103,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseRouting();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
