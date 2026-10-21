@@ -53,7 +53,7 @@ Alle services er hostet i resource group `rg-eshop-pba2` (Sweden Central) under 
 | -------------- | ----------------- | ---------------------------------------------------------------------------------------- |
 | Web (monolit)  | `app-eshop-web`   | https://app-eshop-web-esdbcdaaavgtbycw.swedencentral-01.azurewebsites.net                |
 | OrderService   | `app-eshop-order` | https://app-eshop-order-dfd9awhue9hqacdu.swedencentral-01.azurewebsites.net             |
-| CatalogService | `app-eshop-catalog` | (indsæt URL fra Azure)                                                                 |
+| CatalogService | `app-eshop-catalog` | https://app-eshop-catalog-cpfcatama7aqcpem.swedencentral-01.azurewebsites.net         |
 
 ### Databaser
 
