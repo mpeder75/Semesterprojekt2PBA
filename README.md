@@ -43,6 +43,57 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 ---
 
+## ☁️ Azure (produktion)
+
+Alle services er hostet i resource group `rg-eshop-pba2` (Sweden Central) under `Azure subscription 1`.
+
+### App Services
+
+| Service        | App Service       | URL                                                                                      |
+| -------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| Web (monolit)  | `app-eshop-web`   | https://app-eshop-web-esdbcdaaavgtbycw.swedencentral-01.azurewebsites.net                |
+| OrderService   | `app-eshop-order` | https://app-eshop-order-dfd9awhue9hqacdu.swedencentral-01.azurewebsites.net             |
+| CatalogService | `app-eshop-catalog` | (indsæt URL fra Azure)                                                                 |
+
+### Databaser
+
+Alle databaser kører på `sql-eshop-server.database.windows.net`:
+
+| Database              | Tilhører          |
+| --------------------- | ----------------- |
+| `eshop-catalog`       | Web (monolit)     |
+| `eshop-identity`      | Web (monolit)     |
+| `eshop-order`         | OrderService      |
+| `eshop-catalog-service` | CatalogService  |
+
+### CI/CD
+
+Hver service har sit eget workflow der deployer automatisk ved push til `main`:
+
+| Workflow                             | Deployer til        |
+| ------------------------------------ | ------------------- |
+| `.github/workflows/dotnet.yml`       | `app-eshop-web`     |
+| `.github/workflows/order.yml`        | `app-eshop-order`   |
+| `.github/workflows/catalog.yml`      | `app-eshop-catalog` |
+
+### Adgang til Azure-portalen
+
+Kontakt Michael (mpeder75) for at få en invitation. Når du har accepteret:
+
+1. Log ind på [portal.azure.com](https://portal.azure.com) med din **private** Microsoft-konto (ikke skolekontoen)
+2. Klik på profil øverst til højre → **Switch directory** → vælg `Default Directory (mpeder75...)`
+
+### Tilføj en ny service
+
+1. Opret App Service i `rg-eshop-pba2` — brug eksisterende plan `ASP-rgeshoppba2-af44`
+2. Opret database på `sql-eshop-server` (serverless, 1 GB)
+3. Kør EF migrations lokalt med `--connection`-flag mod Azure SQL
+4. Tilføj connection string under App Service → *Environment variables → Connection strings*
+5. Download publish-profil og tilføj som GitHub secret (fx `AZURE_MYSERVICE_PUBLISH_PROFILE`)
+6. Opret workflow-fil i `.github/workflows/` med path filter på `src/MyService/**`
+
+---
+
 ## ⚙️ Opsætning (lokal udvikling)
 
 > Udvides i takt med at vi implementerer flere teknologier (RabbitMQ, API Gateway, Docker osv.).
@@ -118,7 +169,7 @@ Første kørsel **seeder** databaserne automatisk med produkter og testbrugere.
 | Rolle | Email | Password |
 | ----- | ----- | -------- |
 | Almindelig bruger | `demouser@microsoft.com` | `Pass@word1` |
-| Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` | DICK
+| Administrator (til `/admin`) | `admin@microsoft.com` | `Pass@word1` |
 
 ---
 
