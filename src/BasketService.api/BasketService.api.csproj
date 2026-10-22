@@ -10,14 +10,12 @@
     <PackageReference Include="Ardalis.GuardClauses" />
     <PackageReference Include="Ardalis.Result" />
     <PackageReference Include="Ardalis.Specification" />
+    <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" />
     <PackageReference Include="MinimalApi.Endpoint" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Controllers\" />
-    <Folder Include="Requests\" />
   </ItemGroup>
 
 </Project>
