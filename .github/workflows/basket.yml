@@ -1,0 +1,43 @@
+name: BasketService
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+    - 'src/BasketService.api/**'
+    - '.github/workflows/basket.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT: src/BasketService.api/BasketService.api.csproj
+  AZURE_WEBAPP_NAME: app-eshop-basket
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+    - name: Publish
+      run: dotnet publish ${{ env.PROJECT }} --configuration Release --output ./publish
+    - uses: actions/upload-artifact@v4
+      with:
+        name: basket
+        path: ./publish
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: basket
+        path: ./publish
+    - name: Deploy to Azure App Service
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        publish-profile: ${{ secrets.AZURE_BASKET_PUBLISH_PROFILE }}
+        package: ./publish
