@@ -32,6 +32,24 @@ builder.Services.AddEndpoints();
 
 var app = builder.Build();
 
+app.Logger.LogInformation("App created...");
+
+app.Logger.LogInformation("Migrating Database...");
+
+using (var scope = app.Services.CreateScope())
+{
+    var scopedProvider = scope.ServiceProvider;
+    try
+    {
+        var basketContext = scopedProvider.GetRequiredService<BasketContext>();
+        await BasketContextSeed.SeedAsync(basketContext, app.Logger);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "An error occurred migrating the DB.");
+    }
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
