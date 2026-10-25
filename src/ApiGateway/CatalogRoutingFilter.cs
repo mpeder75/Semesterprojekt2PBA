@@ -4,9 +4,9 @@ namespace ApiGateway;
 
 public sealed class CatalogRoutingFilter : IProxyConfigFilter
 {
-    private readonly CatalogRoutingSelection _selection;
+    private readonly ServiceRoutingSelection _selection;
 
-    public CatalogRoutingFilter(CatalogRoutingSelection selection)
+    public CatalogRoutingFilter(ServiceRoutingSelection selection)
     {
         _selection = selection;
     }
@@ -22,7 +22,7 @@ public sealed class CatalogRoutingFilter : IProxyConfigFilter
             "catalog-items" or "catalog-brands" or "catalog-types";
 
         return ValueTask.FromResult(isCatalogRoute
-            ? route with { ClusterId = _selection.ClusterId }
-            : route);
+                 ? route with { ClusterId = _selection.CatalogClusterId }
+                 : route);
     }
 }

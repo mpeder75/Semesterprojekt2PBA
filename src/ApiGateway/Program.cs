@@ -1,13 +1,12 @@
 ﻿using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Http.Timeouts;
-using Yarp.ReverseProxy.Forwarder;
 using ApiGateway;
 using Microsoft.FeatureManagement;
+using ApiGateway.MiddlewareExt;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddFeatureManagement();
-builder.Services.AddSingleton<CatalogRoutingSelection>();
+builder.Services.AddSingleton<ServiceRoutingSelection>();
 
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
@@ -63,38 +62,15 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-await app.Services.GetRequiredService<CatalogRoutingSelection>()
-    .InitializeAsync();
+var routingSelection = app.Services.GetRequiredService<ServiceRoutingSelection>();
+await routingSelection.InitializeAsync();
 
 app.UseRouting();
 app.UseRateLimiter();
 app.UseRequestTimeouts();
 
-app.Use(async (context, next) =>
-{
-    var timeoutToken = context.Features
-        .Get<IHttpRequestTimeoutFeature>()?.RequestTimeoutToken
-        ?? CancellationToken.None;
-
-    await next(context);
-
-    var proxyError = context.Features.Get<IForwarderErrorFeature>();
-
-    if (timeoutToken.IsCancellationRequested
-        && proxyError?.Error is ForwarderError.RequestCanceled
-            or ForwarderError.RequestBodyCanceled
-        && !context.Response.HasStarted)
-    {
-        context.Response.Clear();
-        context.Response.StatusCode = StatusCodes.Status504GatewayTimeout;
-
-        app.Logger.LogWarning(
-            "Gateway timeout for {Method} {Path}. TraceId: {TraceId}",
-            context.Request.Method,
-            context.Request.Path,
-            context.TraceIdentifier);
-    }
-});
+app.UseMiddleware<ServiceToggleMiddleware>();
+app.UseMiddleware<ProxyTimeoutMiddleware>();
 
 app.MapGet("/health/gateway", () => Results.Ok(new { status = "Running" }));
 app.MapReverseProxy();

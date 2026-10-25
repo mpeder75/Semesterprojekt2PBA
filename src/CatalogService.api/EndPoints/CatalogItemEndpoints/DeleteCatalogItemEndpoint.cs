@@ -1,6 +1,4 @@
 ﻿using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -23,7 +21,6 @@ public class DeleteCatalogItemEndpoint : IEndpoint<IResult, DeleteCatalogItemReq
                 return await HandleAsync(new DeleteCatalogItemRequest(catalogItemId), itemRepository);
             })
             .Produces<DeleteCatalogItemResponse>()
-            .RequireAuthorization("CatalogAdministrators")
             .WithTags("CatalogItemEndpoints");
 
     }

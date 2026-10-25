@@ -33,6 +33,11 @@ public static class BasketEndpoints
         AddBasketItemRequest request,
         IBasketService basketService)
     {
+        if (request.Quantity < 0)
+        {
+            return Results.BadRequest("Quantity cannot be negative.");
+        }
+
         var basket = await basketService.AddItemToBasket(
             username,
             request.CatalogItemId,
@@ -43,12 +48,12 @@ public static class BasketEndpoints
     }
 
     private static async Task<IResult> DeleteBasket(
-        int basketId,
-        IBasketService basketService)
+      int basketId,
+      IBasketService basketService)
     {
-        await basketService.DeleteBasketAsync(basketId);
+        var deleted = await basketService.DeleteBasketAsync(basketId);
 
-        return Results.NoContent();
+        return deleted ? Results.NoContent() : Results.NotFound();
     }
 
     private static async Task<IResult> SetQuantities(
@@ -56,6 +61,13 @@ public static class BasketEndpoints
         UpdateBasketQuantitiesRequest request,
         IBasketService basketService)
     {
+        if (request.Quantities is null
+             || request.Quantities.Values.Any(quantity => quantity < 0))
+        {
+            return Results.BadRequest(
+                "Quantities must be provided and values must be zero or greater.");
+        }
+
         var result = await basketService.SetQuantities(
             basketId,
             request.Quantities);

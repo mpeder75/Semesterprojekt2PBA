@@ -35,11 +35,17 @@ public class BasketService : IBasketService
         return basket;
     }
 
-    public async Task DeleteBasketAsync(int basketId)
+    public async Task<bool> DeleteBasketAsync(int basketId)
     {
         var basket = await _basketRepository.GetByIdAsync(basketId);
-        Guard.Against.Null(basket, nameof(basket));
+
+        if (basket is null)
+        {
+            return false;
+        }
+
         await _basketRepository.DeleteAsync(basket);
+        return true;
     }
 
     public async Task<Result<Basket>> SetQuantities(int basketId, Dictionary<string, int> quantities)

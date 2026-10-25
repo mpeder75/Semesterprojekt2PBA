@@ -1,7 +1,5 @@
 ﻿using System.Threading.Tasks;
 using CatalogService.api.Interfaces;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -32,7 +30,6 @@ public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemReq
                 return await HandleAsync(request, itemRepository);
             })
             .Produces<CreateCatalogItemResponse>()
-            .RequireAuthorization("CatalogAdministrators")
             .WithTags("CatalogItemEndpoints");
 
     }
@@ -72,6 +69,6 @@ public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemReq
             Price = newItem.Price
         };
         response.CatalogItem = dto;
-        return Results.Created($"api/catalog-items/{dto.Id}", response);
+        return Results.Created($"/api/catalog-items/{dto.Id}", response);
     }
 }
