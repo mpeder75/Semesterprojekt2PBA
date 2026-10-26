@@ -1,4 +1,4 @@
-﻿namespace ApiGateway.MiddlewareExt;
+﻿namespace ApiGateway.Middleware;
 
 public sealed class ServiceToggleMiddleware
 {

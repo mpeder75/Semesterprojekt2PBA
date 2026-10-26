@@ -1,7 +1,7 @@
-﻿using System.Threading.RateLimiting;
+﻿using ApiGateway.Extensions;
 using ApiGateway;
 using Microsoft.FeatureManagement;
-using ApiGateway.MiddlewareExt;
+using ApiGateway.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,50 +15,7 @@ builder.Services.AddReverseProxy()
 
 builder.Services.AddRequestTimeouts();
 
-var apiPermitLimit = builder.Configuration.GetValue(
-    "Gateway:RateLimiting:ApiPermitLimit", 60);
-
-var loginPermitLimit = builder.Configuration.GetValue(
-    "Gateway:RateLimiting:LoginPermitLimit", 10);
-
-if (loginPermitLimit <= 0)
-{
-    throw new InvalidOperationException(
-        "LoginPermitLimit must be greater than zero.");
-}
-
-if (apiPermitLimit <= 0)
-{
-    throw new InvalidOperationException(
-        "ApiPermitLimit must be greater than zero.");
-}
-
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-    options.AddPolicy("api", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = apiPermitLimit,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-
-    options.AddPolicy("login", context =>
-    RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        factory: _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = loginPermitLimit,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0,
-            AutoReplenishment = true
-        }));
-});
+builder.Services.AddGatewayRateLimiting(builder.Configuration);
 
 var app = builder.Build();
 

@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http.Timeouts;
 using Yarp.ReverseProxy.Forwarder;
 
-namespace ApiGateway.MiddlewareExt;
+namespace ApiGateway.Middleware;
 
 public sealed class ProxyTimeoutMiddleware
 {
