@@ -1,10 +1,10 @@
-namespace OrderService.api.Endpoints.OrderEndpoints;
+﻿namespace OrderService.api.Endpoints.OrderEndpoints;
 
 public class AddressDto
 {
-    public string Street { get; set; }
-    public string City { get; set; }
-    public string State { get; set; }
-    public string Country { get; set; }
-    public string ZipCode { get; set; }
+    public string Street { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string State { get; set; } = string.Empty;
+    public string Country { get; set; } = string.Empty;
+    public string ZipCode { get; set; } = string.Empty;
 }
