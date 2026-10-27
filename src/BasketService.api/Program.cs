@@ -5,6 +5,11 @@ using MinimalApi.Endpoint.Extensions;
 using BasketService.api.Data.Queries;
 using BasketService.api.Logging;
 using BasketService.api.Endpoints;
+using RabbitMQ.Client;
+using BasketService.api.Messaging.Messages;
+using BasketService.api.Messaging.Handlers;
+using BasketService.api.Messaging.Deserialization;
+using BasketService.api.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,12 +26,41 @@ builder.Services.AddDbContext<BasketContext>(c =>
         c.UseSqlServer(connetionString, SqlOptions => SqlOptions.EnableRetryOnFailure());
     });
 
+builder.Services.AddSingleton<IConnection>(_ =>
+{
+    var factory = new ConnectionFactory
+    {
+        Uri = new Uri(
+            builder.Configuration["RabbitMQ:Uri"]
+            ??
+            "amqp://guest:guest@localhost:5672/"),
+        ClientProvidedName = "BasketService"
+    };
+
+    return factory.CreateConnectionAsync().GetAwaiter().GetResult();
+});
+
 builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
 builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
 builder.Services.AddScoped(typeof(IAppLogger<>), typeof(LoggerAdapter<>));
 builder.Services.AddScoped<IBasketService, BasketService.api.Services.BasketService>();
 builder.Services.AddScoped<IBasketQueryService, BasketQueryService>();
 
+//MessageHandlers
+builder.Services.AddScoped<IBasketMessageHandler<AddItemToBasketMessage>, AddItemToBasketMessageHandler>();
+builder.Services.AddScoped<IBasketMessageHandler<DeleteBasketMessage>, DeleteBasketMessageHandler>();
+builder.Services.AddScoped<IBasketMessageHandler<SetBasketQuantitiesMessage>, SetBasketQuantitesMessageHandler>();
+builder.Services.AddScoped<IBasketMessageHandler<TransferBasketMessage>, TransferBasketMessageHandler>();
+
+//MessageDeserializer
+builder.Services.AddSingleton<IBasketMessageDeserializer, AddItemToBasketMessageDeserializer>();
+builder.Services.AddSingleton<IBasketMessageDeserializer, DeleteBasketMessageDeserializer>();
+builder.Services.AddSingleton<IBasketMessageDeserializer, SetBasketQuantitiesMessageDeserializer>();
+builder.Services.AddSingleton<IBasketMessageDeserializer, TransferBasketMessageDeserializer>();
+builder.Services.AddSingleton<BasketMessageDeserializerResolver>();
+
+//RabbitMQ
+builder.Services.AddHostedService<BasketRabbitMqConsumer>();
 
 builder.Services.AddEndpoints();
 
