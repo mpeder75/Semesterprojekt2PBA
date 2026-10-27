@@ -5,8 +5,10 @@ using CatalogService.api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MinimalApi.Endpoint.Extensions;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.Services.AddEndpoints();
 
 builder.Services.AddControllers();
@@ -59,8 +61,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseAuthorization();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(app.Environment.ContentRootPath, "images")),
+    RequestPath = "/images"
+});
 
+app.UseRouting();
 app.MapControllers();
 app.MapEndpoints();
 

@@ -9,10 +9,10 @@ public class BasketItem : BaseEntity
     public int CatalogItemId { get; private set; }
     public int BasketId { get; private set; }
 
-    public BasketItem (int catalogItemId, int quantity, decimal unitPrice)
+    public BasketItem(int catalogItemId, int quantity, decimal unitPrice)
     {
         CatalogItemId = catalogItemId;
-        UnitPrice = quantity;
+        UnitPrice = unitPrice;
         SetQuantity(quantity);
     }
 
@@ -20,13 +20,13 @@ public class BasketItem : BaseEntity
     {
         Guard.Against.OutOfRange(quantity, nameof(quantity), 0, int.MaxValue);
 
-        Quantity = quantity;
+        Quantity += quantity;
     }
 
     public void SetQuantity(int quantity)
     {
         Guard.Against.OutOfRange(quantity, nameof(quantity), 0, int.MaxValue);
 
-        Quantity += quantity;
+        Quantity = quantity;
     }
 }
