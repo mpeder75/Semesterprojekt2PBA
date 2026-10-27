@@ -8,12 +8,23 @@ public class OrderCreateEndpoint : IEndpoint<IResult, CreateOrderRequest, IRepos
 {
     public async Task<IResult> HandleAsync(CreateOrderRequest request, IRepository<Order> orderRepository)
     {
-      if( string.IsNullOrWhiteSpace(request.BuyerId) || request.Items.Count <= 0 )
-      {
-        return Results.BadRequest("Invalid request data.");
-      }
+        if (string.IsNullOrWhiteSpace(request.BuyerId)
+      || request.ShipToAddress is null
+      || request.Items is null
+      || request.Items.Count == 0)
+        {
+            return Results.BadRequest(
+                "A buyer, shipping address and at least one order item are required.");
+        }
 
-      var a = request.ShipToAddress;
+        if (request.Items.Any(item =>
+            item is null || item.Units <= 0 || item.UnitPrice < 0))
+        {
+            return Results.BadRequest(
+                "Order items must have positive units and non-negative prices.");
+        }
+
+        var a = request.ShipToAddress;
       var address = new Address(a.Street, a.City, a.State,a.Country, a.ZipCode);
 
       var items = request.Items.Select(dto =>
@@ -29,7 +40,7 @@ public class OrderCreateEndpoint : IEndpoint<IResult, CreateOrderRequest, IRepos
       var response = new CreateOrderResponse(request.CorrelationId());
       response.OrderId = order.Id;
 
-      return Results.Created($"api/orders/{order.Id}", response);
+      return Results.Created($"/api/orders/{order.Id}", response);
     }
 
     public void AddRoute(IEndpointRouteBuilder app)

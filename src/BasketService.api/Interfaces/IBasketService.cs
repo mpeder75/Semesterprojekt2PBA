@@ -8,6 +8,6 @@ namespace BasketService.api.Interfaces
         Task TransferBasketAsync(string anonmousId, string userName);
         Task<Basket> AddItemToBasket(string userName, int catalogItemId, decimal price, int quantity = 1);
         Task<Result<Basket>> SetQuantities(int basketId, Dictionary<string, int> quantities);
-        Task DeleteBasketAsync(int basketId);
+        Task<bool> DeleteBasketAsync(int basketId);
     }
 }

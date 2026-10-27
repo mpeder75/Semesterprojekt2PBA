@@ -10,6 +10,16 @@ public class UriComposer : IUriComposer
 
     public string ComposePicUri(string uriTemplate)
     {
-        return uriTemplate.Replace("http://catalogbaseurltobereplaced", _catalogSettings.CatalogBaseUrl);
+        var pictureUri = uriTemplate
+            .Replace("http://catalogbaseurltobereplaced", _catalogSettings.CatalogBaseUrl)
+            .Replace('\\', '/');
+
+        if (pictureUri.StartsWith("images/", StringComparison.OrdinalIgnoreCase))
+        {
+            var baseUrl = _catalogSettings.CatalogBaseUrl?.TrimEnd('/') ?? string.Empty;
+            return $"{baseUrl}/{pictureUri}";
+        }
+
+        return pictureUri;
     }
 }

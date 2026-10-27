@@ -36,6 +36,7 @@ project.fragment.lock.json
 *.userosscache
 *.sln.docstates
 appsettings.Development.json
+!src/ApiGateway/appsettings.Development.json
 appsettings.Local.json
 secrets.json
 **/Properties/launchSettings.json

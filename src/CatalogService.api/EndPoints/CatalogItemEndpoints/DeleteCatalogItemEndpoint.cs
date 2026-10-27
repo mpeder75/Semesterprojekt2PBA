@@ -1,6 +1,4 @@
 ﻿using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -18,13 +16,13 @@ public class DeleteCatalogItemEndpoint : IEndpoint<IResult, DeleteCatalogItemReq
     public void AddRoute(IEndpointRouteBuilder app)
     {
         app.MapDelete("api/catalog-items/{catalogItemId}",
-            //[Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
-            async (int catalogItemId, IRepository<CatalogItem> itemRepository) =>
+             async (int catalogItemId, IRepository<CatalogItem> itemRepository) =>
             {
                 return await HandleAsync(new DeleteCatalogItemRequest(catalogItemId), itemRepository);
             })
             .Produces<DeleteCatalogItemResponse>()
             .WithTags("CatalogItemEndpoints");
+
     }
 
     public async Task<IResult> HandleAsync(DeleteCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
