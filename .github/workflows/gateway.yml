@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/ApiGateway/**'
+      - 'tests/ApiGateway.Tests/**'
       - '.github/workflows/gateway.yml'
       - 'global.json'
       - 'Directory.Packages.props'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'src/ApiGateway/**'
+      - 'tests/ApiGateway.Tests/**'
       - '.github/workflows/gateway.yml'
       - 'global.json'
       - 'Directory.Packages.props'
@@ -24,6 +26,7 @@ permissions:
 
 env:
   PROJECT: src/ApiGateway/ApiGateway.csproj
+  TEST_PROJECT: tests/ApiGateway.Tests/ApiGateway.Tests.csproj
   AZURE_WEBAPP_NAME: eshop-yarp-gateway
 
 jobs:
@@ -41,10 +44,13 @@ jobs:
           dotnet-quality: 'ga'
 
       - name: Restore dependencies
-        run: dotnet restore ${{ env.PROJECT }}
+        run: dotnet restore ${{ env.TEST_PROJECT }}
 
       - name: Build gateway
         run: dotnet build ${{ env.PROJECT }} --configuration Release --no-restore
+
+      - name: Test gateway
+        run: dotnet test ${{ env.TEST_PROJECT }} --configuration Release --no-restore
 
       - name: Publish gateway
         run: dotnet publish ${{ env.PROJECT }} --configuration Release --no-build --output ./publish

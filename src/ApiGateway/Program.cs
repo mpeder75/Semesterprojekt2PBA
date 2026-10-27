@@ -44,6 +44,20 @@ if (app.Environment.IsProduction())
     app.UseHsts();
 }
 
+if (!app.Environment.IsDevelopment())
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/swagger"))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next(context);
+    });
+}
+
 app.UseRouting();
 app.UseRateLimiter();
 app.UseRequestTimeouts();
