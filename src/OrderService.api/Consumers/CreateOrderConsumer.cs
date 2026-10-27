@@ -45,6 +45,12 @@ public class CreateOrderConsumer : BackgroundService
                 var command = JsonSerializer.Deserialize<CreateOrderCommand>(body)
                     ?? throw new InvalidOperationException("Empty order command.");
 
+                if (string.IsNullOrWhiteSpace(command.BuyerId) || command.Items.Count == 0 || command.ShipToAddress is null)
+                    throw new InvalidOperationException("A buyer and at least one order item are required.");
+
+                if (command.Items.Any(i => i.Units <= 0 || i.UnitPrice < 0))
+                    throw new InvalidOperationException("Order items must have positive units and non-negative prices.");
+
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IRepository<Order>>();
 
@@ -61,8 +67,7 @@ public class CreateOrderConsumer : BackgroundService
 
                 await orderRepository.AddAsync(order);
 
-
-                _logger.LogInformation("Received a message: {BuyerId}", command.BuyerId);
+                _logger.LogInformation("Created order: {OrderId} for {BuyerId}", order.Id, command.BuyerId);
 
                 await channel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: stoppingToken);
             }
