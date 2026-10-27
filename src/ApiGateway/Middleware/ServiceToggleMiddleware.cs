@@ -1,4 +1,6 @@
-﻿namespace ApiGateway.Middleware;
+﻿using Yarp.ReverseProxy.Model;
+
+namespace ApiGateway.Middleware;
 
 public sealed class ServiceToggleMiddleware
 {
@@ -15,24 +17,16 @@ public sealed class ServiceToggleMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        string? disabledService = null;
+        var route = context.GetEndpoint()?.Metadata
+            .GetMetadata<RouteModel>()?.Config;
 
-        if (context.Request.Path.StartsWithSegments("/api/baskets")
-            && !_routingSelection.UseBasketService)
-        {
-            disabledService = "Basket";
-        }
-        else if (context.Request.Path.StartsWithSegments("/api/orders")
-            && !_routingSelection.UseOrderService)
-        {
-            disabledService = "Order";
-        }
+        var service = ServiceRouteMetadata.GetService(route);
 
-        if (disabledService is not null)
+        if (service is not null && _routingSelection.IsDisabled(service))
         {
             await Results.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: $"{disabledService} API is disabled",
+                title: $"{service} API is disabled",
                 detail: "Enable its gateway feature flag and restart the gateway.")
                 .ExecuteAsync(context);
 

@@ -2,13 +2,25 @@ name: ApiGateway
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
     paths:
       - 'src/ApiGateway/**'
       - '.github/workflows/gateway.yml'
       - 'global.json'
       - 'Directory.Packages.props'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/ApiGateway/**'
+      - '.github/workflows/gateway.yml'
+      - 'global.json'
+      - 'Directory.Packages.props'
+
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   PROJECT: src/ApiGateway/ApiGateway.csproj
@@ -16,30 +28,49 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
-      with:
-        global-json-file: global.json
-    - name: Publish
-      run: dotnet publish ${{ env.PROJECT }} --configuration Release --output ./publish
-    - uses: actions/upload-artifact@v4
-      with:
-        name: gateway
-        path: ./publish
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+          dotnet-quality: 'ga'
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT }}
+
+      - name: Build gateway
+        run: dotnet build ${{ env.PROJECT }} --configuration Release --no-restore
+
+      - name: Publish gateway
+        run: dotnet publish ${{ env.PROJECT }} --configuration Release --no-build --output ./publish
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway
+          path: ./publish
+          if-no-files-found: error
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: windows-latest
+
     steps:
-    - uses: actions/download-artifact@v4
-      with:
-        name: gateway
-        path: ./publish
-    - name: Deploy to Azure App Service
-      uses: azure/webapps-deploy@v3
-      with:
-        app-name: ${{ env.AZURE_WEBAPP_NAME }}
-        publish-profile: ${{ secrets.YARP_PUBLISH_PROFILE }}
-        package: ./publish
+      - name: Download deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway
+          path: ./publish
+
+      - name: Deploy gateway to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.YARP_PUBLISH_PROFILE }}
+          package: ./publish
