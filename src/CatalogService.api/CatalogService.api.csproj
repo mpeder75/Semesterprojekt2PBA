@@ -34,8 +34,4 @@
     <PackageReference Include="Swashbuckle.AspNetCore.Swagger" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Application\" />
-  </ItemGroup>
-
 </Project>

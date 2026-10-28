@@ -22,6 +22,7 @@ public class CreateOrderConsumer : BackgroundService
         _scopeFactory = scopeFactory;
     }
 
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await using var channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
