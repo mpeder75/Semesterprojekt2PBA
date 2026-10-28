@@ -63,6 +63,7 @@ builder.Services.AddSingleton<IConnection>(_ =>
 });
 
 builder.Services.AddScoped<IOrderMessagePublisher, OrderMessagePublisher>();
+builder.Services.AddSingleton<IRequestReplyClient, RequestReplyClient>();
 
 builder.Services.AddCookieSettings();
 
