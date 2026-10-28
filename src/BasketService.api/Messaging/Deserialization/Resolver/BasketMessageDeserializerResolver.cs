@@ -2,7 +2,7 @@
 using BasketService.api.Interfaces;
 using BasketService.api.Messaging.Envelopes;
 
-namespace BasketService.api.Messaging.Deserialization;
+namespace BasketService.api.Messaging.Deserialization.Resolver;
 
 public sealed class BasketMessageDeserializerResolver
 {

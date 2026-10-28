@@ -1,23 +1,23 @@
 ﻿using System.Text.Json;
-using BasketService.api.Messaging.Deserialization;
+using BasketService.api.Messaging.Deserialization.Resolver;
 using BasketService.api.Messaging.Envelopes;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace BasketService.api.Messaging;
+namespace BasketService.api.Messaging.Consumers;
 
-public class BasketRabbitMqConsumer : BackgroundService
+public class BasketRabbitMqCommandConsumer : BackgroundService
 {
     private const string QueueName = "basket.commands";
     IConnection _connection;
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly ILogger<BasketRabbitMqConsumer> _logger;
+    private readonly ILogger<BasketRabbitMqCommandConsumer> _logger;
     private readonly BasketMessageDeserializerResolver _messageDeserializerResolver;
 
-    public BasketRabbitMqConsumer(
+    public BasketRabbitMqCommandConsumer(
         IConnection connection, 
         IServiceScopeFactory serviceScopeFactory,
-        ILogger<BasketRabbitMqConsumer> logger,
+        ILogger<BasketRabbitMqCommandConsumer> logger,
         BasketMessageDeserializerResolver messageDeserializerResolver)
     {
         _connection = connection;
@@ -58,7 +58,7 @@ public class BasketRabbitMqConsumer : BackgroundService
 
                 await using var scope = _serviceScopeFactory.CreateAsyncScope();
                 var dispatcher = scope.ServiceProvider.GetRequiredService<BasketMessageDispatcher>();
-                await dispatcher.DispatchAsync(message, stoppingToken);
+                await dispatcher.DispatchMessageAsync(message, stoppingToken);
                 await channel.BasicAckAsync(
                     ea.DeliveryTag,
                     multiple:false,

@@ -4,3 +4,8 @@ public interface IBasketMessageHandler<in TMessage> where TMessage : IBasketMess
 {
     Task HandleAsync(TMessage message, CancellationToken cancellationToken = default);
 }
+
+public interface IBasketMessageHandler<in TMessage, TResult> where TMessage : IBasketMessage
+{
+    Task<TResult> HandleAsync( TMessage message, CancellationToken cancellationToken = default);
+}

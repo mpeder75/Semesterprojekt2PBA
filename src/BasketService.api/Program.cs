@@ -9,7 +9,8 @@ using RabbitMQ.Client;
 using BasketService.api.Messaging.Messages;
 using BasketService.api.Messaging.Handlers;
 using BasketService.api.Messaging.Deserialization;
-using BasketService.api.Messaging;
+using BasketService.api.Messaging.Consumers;
+using BasketService.api.Messaging.Deserialization.Resolver;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,7 +61,8 @@ builder.Services.AddSingleton<IBasketMessageDeserializer, TransferBasketMessageD
 builder.Services.AddSingleton<BasketMessageDeserializerResolver>();
 
 //RabbitMQ
-builder.Services.AddHostedService<BasketRabbitMqConsumer>();
+builder.Services.AddHostedService<BasketRabbitMqCommandConsumer>();
+builder.Services.AddHostedService<BasketRabbitMqRequestConsumer>();
 
 builder.Services.AddEndpoints();
 
