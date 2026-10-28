@@ -40,6 +40,7 @@ builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
 // RabbitMQ
 builder.Services.AddHostedService<CreateOrderConsumer>();
 builder.Services.AddHostedService<ListOrdersConsumer>();
+builder.Services.AddHostedService<GetOrderConsumer>();
 
 builder.Services.AddEndpoints();
 builder.Services.AddSwaggerGen();

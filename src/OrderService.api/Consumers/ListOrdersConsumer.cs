@@ -24,7 +24,6 @@ public class ListOrdersConsumer : BackgroundService
         _scopeFactory = scopeFactory;
     }
 
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await using var channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
@@ -53,6 +52,12 @@ public class ListOrdersConsumer : BackgroundService
                     throw new InvalidOperationException("Buyer ID is required.");
                 }
 
+                var replyTo = ea.BasicProperties.ReplyTo;
+                var correlationId = ea.BasicProperties.CorrelationId;
+
+                if (string.IsNullOrWhiteSpace(replyTo) || string.IsNullOrWhiteSpace(correlationId))
+                    throw new InvalidOperationException("ReplyTo and CorrelationId are required.");
+
                 await using var scope = _scopeFactory.CreateAsyncScope();
 
                 var orderRepository = scope.ServiceProvider.GetRequiredService<IReadRepository<Order>>();
@@ -74,12 +79,6 @@ public class ListOrdersConsumer : BackgroundService
                         ZipCode = order.ShipToAddress.ZipCode
                     }
                 }));
-
-                var replyTo = ea.BasicProperties.ReplyTo;
-                var correlationId = ea.BasicProperties.CorrelationId;
-
-                if (string.IsNullOrWhiteSpace(replyTo) || string.IsNullOrWhiteSpace(correlationId))
-                    throw new InvalidOperationException("ReplyTo and CorrelationId are required.");
 
                 var responseBody = JsonSerializer.SerializeToUtf8Bytes(listOrdersResponse);
 
