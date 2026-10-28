@@ -47,6 +47,54 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 Alle services er hostet i resource group `rg-eshop-pba2` (Sweden Central) under `Azure subscription 1`.
 
+### Deployment-diagram
+
+```mermaid
+flowchart LR
+    klient([Browser / klient])
+
+    subgraph azure["Azure — rg-eshop-pba2 (Sweden Central)"]
+        gw["API Gateway (YARP)<br/>eshop-yarp-gateway"]
+
+        subgraph apps["App Services"]
+            web["Web (monolit)<br/>app-eshop-web"]
+            catalog["CatalogService<br/>app-eshop-catalog"]
+            basket["BasketService<br/>app-eshop-basket"]
+            order["OrderService<br/>app-eshop-order"]
+        end
+
+        subgraph sql["Azure SQL — sql-eshop-server"]
+            dbweb[("eshop-catalog<br/>eshop-identity")]
+            dbcatalog[("eshop-catalog-service")]
+            dbbasket[("eshop-basket")]
+            dborder[("eshop-order-service")]
+        end
+    end
+
+    subgraph cloudamqp["CloudAMQP (uden for Azure)"]
+        mq{{"RabbitMQ<br/>vhost slivschz"}}
+    end
+
+    klient -->|HTTPS| gw
+    gw -->|HTTP| web
+    gw -->|HTTP| catalog
+    gw -->|HTTP| basket
+    gw -->|HTTP| order
+
+    web --- dbweb
+    catalog --- dbcatalog
+    basket --- dbbasket
+    order --- dborder
+
+    order <-->|"AMQP (amqps)<br/>order.create"| mq
+    web -.->|"AMQP: kommer med næste merge<br/>order.list / order.get"| mq
+    basket <-->|"AMQP (amqps)<br/>basket.commands"| mq
+```
+
+Fuld linje = virker og er testet i Azure. Stiplet linje = koden findes, men er ikke deployet eller verificeret i Azure endnu.
+
+Gatewayens ruter (`web`, `catalog-*`, `basket-api`, `order-api`) står i `src/ApiGateway/appsettings.Production.json`. Services taler med hinanden og med monolitten via RabbitMQ, ikke gennem gatewayen.
+
 ### App Services
 
 | Service        | App Service       | URL                                                                                      |
@@ -54,6 +102,24 @@ Alle services er hostet i resource group `rg-eshop-pba2` (Sweden Central) under 
 | Web (monolit)  | `app-eshop-web`   | https://app-eshop-web-esdbcdaaavgtbycw.swedencentral-01.azurewebsites.net                |
 | OrderService   | `app-eshop-order` | https://app-eshop-order-dfd9awhue9hqacdu.swedencentral-01.azurewebsites.net             |
 | CatalogService | `app-eshop-catalog` | https://app-eshop-catalog-cpfcatama7aqcpem.swedencentral-01.azurewebsites.net         |
+| BasketService  | `app-eshop-basket` | https://app-eshop-basket-h4dudzc0cec9d6gb.swedencentral-01.azurewebsites.net           |
+| API Gateway (YARP) | `eshop-yarp-gateway` | https://eshop-yarp-gateway-g2c9bzeteqdbbpfn.swedencentral-01.azurewebsites.net    |
+
+> Services uden forside (Order, Catalog, Basket) giver 404 på `/`. Test dem med et rigtigt kald, fx `/api/catalog-types` eller `/api/orders?buyerId=test`. Swagger er kun slået til lokalt (`Development`), ikke i Azure.
+
+### Message broker (RabbitMQ)
+
+Services og monolit kommunikerer asynkront via RabbitMQ (se `docs/status.md` for køer og beskeder).
+
+| Miljø | Hvor | Forbindelse |
+| ----- | ---- | ----------- |
+| Lokalt | Docker: `docker compose -f docker-compose.rabbitmq.yml up -d` fra repo-roden | `amqp://guest:guest@localhost:5672/`, management-UI på <http://localhost:15672> (guest/guest) |
+| Azure | Hosted RabbitMQ hos CloudAMQP (gratis plan "Little Lemur", projekt `eshop-rabbitmq`) | App setting `RabbitMQ__Uri` på hver App Service |
+
+- Koden læser `RabbitMQ:Uri` og falder tilbage til localhost, hvis den ikke er sat. I Azure sættes den som **App setting** `RabbitMQ__Uri` (to understreger), ikke som Connection string. Værdien skal starte med `amqps://`.
+- **URI'en indeholder password og må aldrig lægges i repoet eller deles i chat.** Den findes under *Details* på instansen i CloudAMQP.
+- CloudAMQP-konsol (kræver login og adgang): <https://api.cloudamqp.com/console/eb953d1a-d2f5-4733-a5fc-8eb3d7bcc5d1/details>. Gruppens medlemmer er inviteret som teammedlemmer af Michael (mpeder75): tjek din mail, accepter invitationen og log ind med din egen konto (ingen deler password). Mangler du adgang, så kontakt Michael.
+- CloudAMQP er valgt frem for en container i Azure, fordi Azure-abonnementet har en lav kreditgrænse, og App Service ikke kan køre en broker.
 
 ### Databaser
 
@@ -63,7 +129,8 @@ Alle databaser kører på `sql-eshop-server.database.windows.net`:
 | --------------------- | ----------------- |
 | `eshop-catalog`       | Web (monolit)     |
 | `eshop-identity`      | Web (monolit)     |
-| `eshop-order`         | OrderService      |
+| `eshop-order-service` | OrderService      |
+| `eshop-basket`        | BasketService     |
 | `eshop-catalog-service` | CatalogService  |
 
 ### CI/CD
@@ -75,6 +142,8 @@ Hver service har sit eget workflow der deployer automatisk ved push til `main`:
 | `.github/workflows/dotnet.yml`       | `app-eshop-web`     |
 | `.github/workflows/order.yml`        | `app-eshop-order`   |
 | `.github/workflows/catalog.yml`      | `app-eshop-catalog` |
+| `.github/workflows/basket.yml`       | `app-eshop-basket`  |
+| `.github/workflows/gateway.yml`      | `eshop-yarp-gateway` |
 
 ### Adgang til Azure-portalen
 
