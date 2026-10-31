@@ -4,13 +4,17 @@ using BasketService.api.Messaging.Envelopes;
 
 namespace BasketService.api.Messaging.Deserialization.Resolver;
 
-public sealed class BasketMessageDeserializerResolver
+public sealed class BasketMessageDeserializerResolver : IBasketMessageDeserializerResolver
 {
-    private readonly IReadOnlyDictionary<string, IBasketMessageDeserializer> _messageDeserializers;
+    private readonly IReadOnlyDictionary<string, Type> _messageTypes;
+    private readonly IBasketMessageDeserializer _messageDeserializer;
 
-    public BasketMessageDeserializerResolver( IEnumerable<IBasketMessageDeserializer> messageDeserializers)
+    public BasketMessageDeserializerResolver( 
+        IEnumerable<Type> messageTypes,
+        IBasketMessageDeserializer messageDeserializer)
     {
-        _messageDeserializers = messageDeserializers.ToDictionary(deserializer => deserializer.MessageType, StringComparer.Ordinal);
+        _messageTypes = messageTypes.ToDictionary(type => type.Name, StringComparer.Ordinal);
+        _messageDeserializer = messageDeserializer;
     }
 
     public IBasketMessage Deserialize( BasketMessageEnvelope envelope)
@@ -29,11 +33,11 @@ public sealed class BasketMessageDeserializerResolver
                 "The message payload cannot be empty.");
         }
 
-        if (!_messageDeserializers.TryGetValue(envelope.MessageType, out var messageDeserializer))
+        if (!_messageTypes.TryGetValue(envelope.MessageType, out var messageType))
         {
             throw new InvalidOperationException($"Cannot deserialize {envelope.MessageType}");
         }
 
-        return messageDeserializer.Deserialize(envelope.Payload);
+        return _messageDeserializer.Deserialize(envelope.Payload, messageType);
     }
 }

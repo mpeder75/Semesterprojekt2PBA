@@ -1,5 +1,7 @@
 ﻿namespace BasketService.api.Interfaces;
 
-public interface IBasketReply<out TResult>
-{
+public interface IBasketReply : IBasketMessage{
+}
+
+public interface IBasketReply<out TResult> : IBasketReply { 
 }

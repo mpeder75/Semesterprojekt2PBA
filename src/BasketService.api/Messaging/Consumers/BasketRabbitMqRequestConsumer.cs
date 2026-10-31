@@ -1,4 +1,7 @@
-﻿using System.Text.Json;
+﻿using System.Text;
+using System.Text.Json;
+using BasketService.api.Interfaces;
+using BasketService.api.Messaging.Context;
 using BasketService.api.Messaging.Deserialization.Resolver;
 using BasketService.api.Messaging.Envelopes;
 using RabbitMQ.Client;
@@ -8,102 +11,99 @@ namespace BasketService.api.Messaging.Consumers;
 
 public sealed class BasketRabbitMqRequestConsumer : BackgroundService
 {
-    private const string queueName = "basket.requests";
-
     private readonly IConnection _connection;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<BasketRabbitMqRequestConsumer> _logger;
-    private readonly BasketMessageDeserializerResolver _messageDeserializerResolver;
+    private IChannel? _channel;
 
-    public BasketRabbitMqRequestConsumer(
-        IConnection connection, 
-        IServiceScopeFactory serviceScopeFactory, 
-        ILogger<BasketRabbitMqRequestConsumer> logger,
-        BasketMessageDeserializerResolver MessageDeserializerResolver)
+    public BasketRabbitMqRequestConsumer(IConnection connection, IServiceScopeFactory serviceScopeFactory, ILogger<BasketRabbitMqRequestConsumer> logger)
     {
         _connection = connection;
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
-        _messageDeserializerResolver = MessageDeserializerResolver;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken token)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await using var channel = await _connection.CreateChannelAsync(cancellationToken: token);
+        _channel = await _connection.CreateChannelAsync(
+            cancellationToken: stoppingToken);
 
-        await channel.QueueDeclareAsync(
-            queue: queueName,
+        await _channel.BasicQosAsync(
+            prefetchCount: 1,
+            prefetchSize: 0,
+            global: false,
+            cancellationToken: stoppingToken);
+
+        await _channel.QueueDeclareAsync(
+            queue: "basket.requests",
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: null,
-            cancellationToken: token);
+            cancellationToken: stoppingToken);
 
-        await channel.BasicQosAsync(
-            prefetchSize: 0,
-            prefetchCount: 1,
-            global: false,
-            cancellationToken: token);
+        var consumer = new AsyncEventingBasicConsumer(_channel);
 
-        var consumer = new AsyncEventingBasicConsumer(channel);
-
-        consumer.ReceivedAsync += async (_, ea) =>
+        consumer.ReceivedAsync += async (_, eventArgs) =>
         {
             try
             {
-                var replyTo = ea.BasicProperties.ReplyTo;
+                var payload = Encoding.UTF8.GetString(eventArgs.Body.ToArray());
 
-                if (string.IsNullOrWhiteSpace(replyTo))
-                {
-                    throw new InvalidOperationException("Request message must specify a ReplyTo");
-                }
-
-                var envelope = JsonSerializer.Deserialize<BasketMessageEnvelope>(ea.Body.ToArray())
+                var envelope = JsonSerializer.Deserialize<BasketMessageEnvelope>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                 ??
-                throw new InvalidOperationException("Empty basket reuqest message");
+                throw new JsonException("Failed to deserialize BasketMessageEnvelope.");
 
-                var message = _messageDeserializerResolver.Deserialize(envelope);
+                var replyContext = new BasketReplyContext(
+                    eventArgs.BasicProperties.ReplyTo,
+                    eventArgs.BasicProperties.CorrelationId);
 
-                object? reply;
+                await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
-                await using (var scope = _serviceScopeFactory.CreateAsyncScope())
-                {
-                    var dispatcher = scope.ServiceProvider.GetRequiredService<BasketMessageDispatcher>();
+                var proccessor = scope.ServiceProvider.GetRequiredService<IBasketMessageProcessor>();
 
-                    reply = await dispatcher.DispatchReplyAsync(message, token);
-                }
+                await proccessor.ProcessRequestAsync(envelope, replyContext, stoppingToken);
 
-                var responseBody = JsonSerializer.SerializeToUtf8Bytes(reply, reply?.GetType() ?? typeof(object));
-
-                var responseProperties = new BasicProperties
-                {
-                    CorrelationId = ea.BasicProperties.CorrelationId,
-                    ContentType = "applicaiton/json"
-                };
-
-                //TODO: Define exchange
-                await channel.BasicPublishAsync(
-                    exchange: "",
-                    routingKey: replyTo,
-                    mandatory: true,
-                    basicProperties: responseProperties,
-                    body: responseBody,
-                    cancellationToken: token);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
+                await _channel.BasicAckAsync(
+                    eventArgs.DeliveryTag,
+                    multiple: false,
+                    cancellationToken: stoppingToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process basket request. Delivery tag: {DeliveryTag}", ea.DeliveryTag);
+                _logger.LogError(ex, "Failed to process RabbitMQ request");
 
-                await channel.BasicNackAsync(
-                    ea.DeliveryTag,
+                await _channel.BasicNackAsync(
+                    eventArgs.DeliveryTag,
                     multiple: false,
                     requeue: false,
-                    cancellationToken: token);
+                    cancellationToken: stoppingToken);
             }
         };
+
+        await _channel.BasicConsumeAsync(
+            queue: "basket.requests",
+            autoAck: false,
+            consumer: consumer,
+            cancellationToken: stoppingToken);
+
+        _logger.LogInformation("Basket RabbitMQ request consumer started.");
+
+        await Task.Delay(
+            Timeout.Infinite,
+            stoppingToken);
+    }
+
+    public override async Task StopAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Stopping Basket RabbitMQ request consumer.");
+
+        if(_channel is not null)
+        {
+            await _channel.CloseAsync(stoppingToken);
+            await _channel.DisposeAsync();
+        }
+
+        await base.StopAsync(stoppingToken);
     }
 }

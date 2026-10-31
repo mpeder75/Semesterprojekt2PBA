@@ -1,8 +1,10 @@
-﻿using BasketService.api.Interfaces;
+﻿using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
+using BasketService.api.Interfaces;
 
 namespace BasketService.api.Messaging;
 
-public sealed class BasketMessageDispatcher
+public sealed class BasketMessageDispatcher : IBasketMessageDispatcher
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;
 
@@ -11,68 +13,44 @@ public sealed class BasketMessageDispatcher
         _serviceScopeFactory = serviceScopeFactory;
     }
 
-    //For messages that don't need a reply.
-    public async Task DispatchMessageAsync( IBasketMessage message, CancellationToken cancellationToken = default)
+    public async Task DispatchMessageAsync(IBasketMessage message, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(message);
+
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
         var handlerType = typeof(IBasketMessageHandler<>).MakeGenericType(message.GetType());
 
         var handler = scope.ServiceProvider.GetRequiredService(handlerType);
 
-        var method = handlerType.GetMethod(nameof(IBasketMessageHandler<IBasketMessage>.HandleAsync))!;
+        var method = handlerType.GetMethod("HandleAsync")!;
 
         var task = (Task)method.Invoke(handler, new object[] { message, cancellationToken })!;
 
         await task;
+
     }
 
-    //For messages that need a reply
-    public async Task<TResult> DispatchReplyAsync<TResult>(IBasketMessage message, CancellationToken cancellationToken = default)
+    public async Task<IBasketReply> DispatchRequestAsync(IBasketMessage message, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(message);
+
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
-        var handlerType = typeof(IBasketMessageHandler<,>).MakeGenericType(message.GetType(), typeof(TResult));
+        var handlerInterface = scope.ServiceProvider
+            .GetServices<IBasketMessageHandlerAdapter>()
+            .SingleOrDefault(x => x.MessageType == message.GetType());
 
-        var handler = scope.ServiceProvider.GetRequiredService(handlerType);
-
-        var method = handlerType.GetMethod(nameof(IBasketMessageHandler<IBasketMessage>.HandleAsync))!;
-
-        var task = (Task<TResult>)method.Invoke(handler, new object[] { message, cancellationToken })!;
-
-        return await task;
-    }
-
-    public async Task<object?> DispatchReplyAsync(IBasketMessage message, CancellationToken cancellationToken)
-    {
-        var handleInterFace = typeof(IBasketMessageHandler<,>);
-
-        var handleType = AppDomain
-            .CurrentDomain
-            .GetAssemblies()
-            .SelectMany(assembly => assembly.GetTypes())
-            .FirstOrDefault(i =>
-                i.IsGenericType 
-                && i.GetGenericTypeDefinition() == handleInterFace
-                && i.GetGenericArguments()[0] == message.GetType());
-
-        if (handleType is null)
+        if (handlerInterface is null)
         {
-            throw new InvalidOperationException($"No result handler registered for {message.GetType().Name}");
+            throw new InvalidOperationException($"No reply for handler registered for {message.GetType().Name}");
         }
 
-        var resultType = handleType.GetGenericArguments()[1];
+        var reply = await handlerInterface.HandleAsync(
+            scope.ServiceProvider,
+            message,
+            cancellationToken);
 
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-
-        var handler = scope.ServiceProvider.GetRequiredService(handleType);
-
-        var method = handleType.GetMethod("HandleAsync")!;
-
-        var task = (Task)method.Invoke(handler, new object[] { message, cancellationToken })!;
-
-        await task;
-
-        return task.GetType().GetProperty("Rsult")!.GetValue(task);
+        return reply ?? throw new InvalidOperationException($"Request handler for {message.GetType().Name} returend a null reply");
     }
 }
