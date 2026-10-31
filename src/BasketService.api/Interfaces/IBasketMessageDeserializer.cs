@@ -2,7 +2,5 @@
 
 public interface IBasketMessageDeserializer
 {
-    string MessageType { get; }
-
-    IBasketMessage Deserialize(string payload);
+    IBasketMessage Deserialize(string payload, Type messageType);
 }
