@@ -17,10 +17,5 @@ public class SetBasketQuantitesMessageHandler : IBasketMessageHandler<SetBasketQ
 
         var result = await _basketService.SetQuantities(message.BasketId, message.Quantities);
 
-        if (!result.IsSuccess)
-        {
-            //TODO
-            throw new NotImplementedException();
-        }
     }
 }

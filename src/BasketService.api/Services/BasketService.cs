@@ -86,4 +86,14 @@ public class BasketService : IBasketService
         await _basketRepository.UpdateAsync(userBasket);
         await _basketRepository.DeleteAsync(anonymousBasket);
     }
+
+    public async Task<Basket> GetBasketByIdAsync(int basketId)
+    { 
+        var basketSpec =new  BasketWithItemsSpecification(basketId);
+        var basket = await _basketRepository.FirstOrDefaultAsync(basketSpec);
+
+        Guard.Against.Null(basket, nameof(basket), $"Basket with ID {basketId} was not found");
+
+        return basket;
+    }
 }
