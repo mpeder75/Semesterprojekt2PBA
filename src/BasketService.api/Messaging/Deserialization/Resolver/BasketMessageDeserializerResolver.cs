@@ -1,19 +1,19 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using BasketService.api.Interfaces;
+﻿using BasketService.api.Interfaces;
 using BasketService.api.Messaging.Envelopes;
+using BasketService.api.Messaging.Registry;
 
 namespace BasketService.api.Messaging.Deserialization.Resolver;
 
 public sealed class BasketMessageDeserializerResolver : IBasketMessageDeserializerResolver
 {
-    private readonly IReadOnlyDictionary<string, Type> _messageTypes;
+    private readonly BasketMessageRegistry _messageRegistry;
     private readonly IBasketMessageDeserializer _messageDeserializer;
 
     public BasketMessageDeserializerResolver( 
-        IEnumerable<Type> messageTypes,
+        BasketMessageRegistry messageRegistry,
         IBasketMessageDeserializer messageDeserializer)
     {
-        _messageTypes = messageTypes.ToDictionary(type => type.Name, StringComparer.Ordinal);
+        _messageRegistry = messageRegistry;
         _messageDeserializer = messageDeserializer;
     }
 
@@ -33,10 +33,7 @@ public sealed class BasketMessageDeserializerResolver : IBasketMessageDeserializ
                 "The message payload cannot be empty.");
         }
 
-        if (!_messageTypes.TryGetValue(envelope.MessageType, out var messageType))
-        {
-            throw new InvalidOperationException($"Cannot deserialize {envelope.MessageType}");
-        }
+        var messageType = _messageRegistry.GetMessageType(envelope.MessageType);
 
         return _messageDeserializer.Deserialize(envelope.Payload, messageType);
     }
