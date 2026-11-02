@@ -91,7 +91,7 @@ public sealed class BasketRabbitMqMessageConsumer : BackgroundService
         };
 
         await _channel.BasicConsumeAsync(
-            queue: "basket.commands",
+            queue: "basket.messages",
             autoAck: false,
             consumer: consumer,
             cancellationToken: stoppingToken);
