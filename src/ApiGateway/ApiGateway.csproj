@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.FeatureManagement" />
+    <PackageReference Include="Polly.Core" />
   </ItemGroup>
   
 </Project>

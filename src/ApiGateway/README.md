@@ -12,15 +12,19 @@ Browser -> Gateway -> Web: pages, sign-in and /User
                    -> PublicApi: legacy API/fallback, when configured
 ```
 
-Production currently enables Catalog and leaves Basket and Order disabled.
-PublicApi is not deployed in Azure. Web continues to handle sign-in through
+Checked-in Production configuration enables Catalog and leaves Basket and Order
+disabled. PublicApi is not deployed in Azure. Web continues to handle sign-in through
 ASP.NET Core Identity; a separate Identity service is not part of this change.
+
+Polly.Core provides circuit breaking for the tagged Catalog, Basket and Order
+API routes, with independent state per selected backend cluster. The existing
+ASP.NET Core rate limits and request timeouts remain in use.
 
 ## Configuration and backend addresses
 
 | File | Purpose |
 | --- | --- |
-| [appsettings.json](appsettings.json) | Shared routes, service metadata, flag defaults, logging and local allowed host. Contains no backend destinations. |
+| [appsettings.json](appsettings.json) | Shared routes, service metadata, flag defaults, circuit-breaker settings, logging and local allowed host. Contains no backend destinations. |
 | [appsettings.Development.json](appsettings.Development.json) | Local backend destinations, each named `local`. |
 | [appsettings.Production.json](appsettings.Production.json) | Azure destinations named `azure`, the gateway hostname, Catalog enabled and production Host-header transforms. |
 
@@ -131,9 +135,14 @@ transforms when overriding its Host transform.
 ## Request handling
 
 [Program.cs](Program.cs) processes forwarded headers before production HSTS and
-the Swagger restriction. Routing then selects an endpoint, followed by rate
-limiting, request timeouts, the service toggle guard, timeout normalization and
-YARP forwarding. `/health/gateway` is answered locally.
+the Swagger restriction. Routing selects an endpoint, followed by rate limiting,
+the service toggle guard, circuit breaking, request timeouts, timeout
+normalization and YARP forwarding. `/health/gateway` is answered locally.
+
+Rate-limit and disabled-service rejections happen before circuit breaking, so
+they do not enter its accounting. The breaker captures the original client
+cancellation token before request timeouts link in their deadline, then
+classifies the completed proxy outcome after timeout normalization.
 
 ### Client IPs and rate limits
 
@@ -159,7 +168,7 @@ enforcing evenly spaced requests. Counters are held separately by each gateway
 instance, and users sharing a public IP share an allowance on that instance.
 
 The values are retained project defaults, not load-tested production thresholds.
-Sizing remains a follow-up. Override the positive limits at startup with
+Override the positive limits at startup with
 `Gateway__RateLimiting__ApiPermitLimit` and
 `Gateway__RateLimiting__LoginPermitLimit`. Zero or negative limits fail startup.
 Web pages, gateway liveness and Development Swagger have no rate policy.
@@ -181,11 +190,98 @@ back.
 The [timeout tests](../../tests/ApiGateway.Tests/TimeoutTests.cs) compare the real
 pipeline with and without normalization: the installed YARP version returns 400
 for the tested deadline cancellation without the middleware and 504 with it.
-Revisit this comparison when upgrading YARP or ASP.NET Core.
 
 An unavailable configured backend can produce a forwarding error such as 502.
+Repeated qualifying failures on a protected route can open its circuit;
+subsequent calls then receive the gateway's `circuit_open` 503 response.
 In Production, the empty legacy API cluster produces 503 for `/api/authenticate`
 and unmatched `/api/...` requests. Web sign-in uses Web's separate login route.
+
+### Circuit breaking
+
+[GatewayCircuitBreakerMiddleware.cs](Middleware/GatewayCircuitBreakerMiddleware.cs)
+uses Polly.Core 8.9.0 and a singleton
+[pipeline registry](Resilience/GatewayCircuitBreakerRegistry.cs). Each selected
+cluster has its own circuit, shared across its protected routes and clients.
+
+| Protected routes | Circuit key |
+| --- | --- |
+| Tagged Catalog routes, Catalog ON | `catalog-service` |
+| Tagged Catalog routes, Catalog OFF | `monolith-api` |
+| Tagged Basket routes, Basket ON | `basket-service` |
+| Tagged Order routes, Order ON | `order-service` |
+
+Disabled Basket/Order routes return their existing disabled-service response
+before reaching the breaker. Untagged Web, login, public API catch-all and
+Swagger routes bypass it, including when they share a cluster with a protected
+route. Gateway health also bypasses it. Protection applies to HTTP requests
+passing through the tagged gateway routes; direct service HTTP calls and local
+Web repository calls are outside this boundary.
+
+State is in memory in each gateway process. Gateway instances have independent
+circuits, and restarting a process resets its state.
+
+The checked-in `CircuitBreaker` settings are:
+
+| Setting | Default | Startup validation |
+| --- | --- | --- |
+| `FailureRatio` | `0.5` | Finite, greater than 0 and at most 1 |
+| `MinimumThroughput` | `5` | At least 2 |
+| `SamplingDurationSeconds` | `30` | Between 1 and 86400 |
+| `BreakDurationSeconds` | `15` | Between 1 and 86400 |
+
+The circuit opens when the sampling window contains at least the minimum
+number of completed outcomes and the backend failure ratio reaches the
+configured threshold. These are explicit project defaults, not load-tested
+production thresholds. Environment overrides use names such as
+`CircuitBreaker__MinimumThroughput` and `CircuitBreaker__BreakDurationSeconds`.
+Invalid settings stop startup.
+
+[ProxyOutcomeClassifier.cs](Resilience/ProxyOutcomeClassifier.cs) uses both the
+final HTTP status and YARP's forwarding error:
+
+- Count backend HTTP 500, 502, 503 and 504 when no forwarding error is reported.
+- Count connection failures, identified downstream timeouts and a normalized
+  gateway 504 paired with YARP `RequestCanceled`, unless the client canceled.
+- Count explicit destination-side request/response body I/O failures, including
+  when YARP subsequently aborts the request after a stream failure.
+- Ordinary 4xx responses, client cancellation, client-side I/O failures,
+  ambiguous forwarding errors and local programming exceptions do not count
+  as backend failures. Other status codes, including 501, are outside the
+  selected server-error policy.
+
+For a closed circuit, each permitted request is forwarded once. The failure
+that opens the circuit keeps its original response. While open, protected calls
+are rejected without forwarding with HTTP 503 and `application/problem+json`:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.6.4",
+  "title": "Backend temporarily unavailable",
+  "status": 503,
+  "detail": "This service is temporarily unavailable. Please try again later.",
+  "code": "circuit_open",
+  "traceId": "example-request-trace-id"
+}
+```
+
+`Retry-After` contains a positive number of seconds when Polly supplies a retry
+delay. The response's `traceId` is the gateway request's trace identifier.
+Responses that have already started are not rewritten.
+
+After the break, the next request becomes the recovery trial. One trial is
+allowed at a time; concurrent calls are rejected while it is in progress. A
+successful trial closes the circuit, and a qualifying failure opens it again.
+Opening does not cancel requests already in flight. The gateway adds no
+automatic retries or outage fallback. Polly supplies only the circuit breaker;
+ASP.NET Core still supplies rate limiting and request timeouts.
+
+Backend 503 responses can represent failure of a service's own dependency. The
+gateway counts those responses without distinguishing that underlying cause.
+
+[ADR 0001](../../docs/adr/0001-gateway-circuit-breaker.md) records the implemented
+decision. The [test documentation](../../tests/ApiGateway.Tests/README.md#recorded-local-verification)
+records the 254-test result and the running local outage/recovery demonstration.
 
 ### HTTPS and Swagger
 
@@ -208,9 +304,8 @@ apply an API authorization policy.
 
 The current [Catalog startup](../CatalogService.api/Program.cs) does not register
 JWT bearer authentication/authorization. Forwarding a bearer token therefore
-does not establish that Catalog writes are protected. API authorization and
-direct backend access require a separate review; no `Jwt:SigningKey` requirement
-is configured by that startup code.
+does not establish that Catalog writes are protected. No `Jwt:SigningKey`
+requirement is configured by that startup code.
 
 Web's main storefront still reads catalog data through its own repositories.
 Changing `apiBase` redirects existing HTTP API clients, including BlazorAdmin;
@@ -345,8 +440,12 @@ dotnet test tests/ApiGateway.Tests/ApiGateway.Tests.csproj --configuration Relea
 Tests use the real gateway pipeline and route configuration with controlled
 outgoing HTTP responses. They cover all flag combinations, metadata routing,
 root paths, Basket transforms, startup validation, forwarded headers, rate
-limits, production Host/HSTS policies, Development-only Swagger, and timeouts.
-They do not contact Azure or require backend databases.
+limits, production Host/HSTS policies, Development-only Swagger, timeouts and
+circuit breaking. Breaker coverage includes thresholds, per-cluster isolation,
+short-circuit rejection, recovery and reopening, concurrent recovery trials,
+failure classification, configuration validation and single-attempt writes.
+The recorded local Release run passed all 254 cases. Tests do not contact Azure
+or require backend databases.
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests
 to main, matching pushes to main and manual dispatches. Its Windows build job
@@ -367,29 +466,29 @@ Test-Path ./artifacts/web/appsettings.Production.json
 Test-Path ./artifacts/web/wwwroot/appsettings.Production.json
 ```
 
-Both file checks should return `True`. Deployment verification still needs to
-confirm the effective Azure environment/App Settings, backend connectivity,
-client IP handling, HTTPS/HSTS, Swagger 404s, and browser sign-in/catalog requests
-through the Azure gateway hostname.
+Both file checks should return `True`. The circuit-breaker verification recorded
+here covers the automated gateway suite and a local controlled-backend demo;
+it does not establish the effective Azure settings or deployed browser flows.
 
-## Health, observability and remaining scope
+## Health and observability
 
 `/health/gateway` only confirms that the gateway answers requests. It does not
 check downstream services or databases. Startup destination validation also
 does not perform network health checks.
 
-Startup selections and timeout warnings are logged, alongside framework/YARP
-logging. Dedicated request logging, custom correlation-ID handling and
-downstream readiness checks are deferred.
+Startup selections, timeout warnings and circuit transitions are logged,
+alongside framework/YARP messages. Opening is logged at Warning level; half-open
+and closed transitions are logged at Information level. The transition messages
+include the cluster ID:
 
-Circuit breaking and retries are not configured. [ADR 0001](../../docs/adr/0001-gateway-circuit-breaker.md)
-proposes a later shared implementation at the gateway's outgoing HTTP boundary,
-with independent state per backend. The ADR remains Proposed pending review;
-implementation ownership/date still need agreement. RabbitMQ message failure
-handling is a separate concern.
+```text
+Circuit opened for catalog-service. Reason: backend_server_error. Break: 00:00:15.
+Circuit half-open for catalog-service; allowing a recovery trial.
+Circuit closed for catalog-service.
+```
 
-Rate-limit sizing, API authorization, storefront migration and deployed Azure
-verification remain follow-up work as described above.
+Liveness remains available while a backend circuit is open. Its response does
+not expose circuit state or downstream readiness.
 
 ## Troubleshooting
 
@@ -397,7 +496,9 @@ verification remain follow-up work as described above.
 | --- | --- |
 | 400 Bad Host | Effective `AllowedHosts` and the actual public request hostname. |
 | Catalog fallback startup error | Catalog is OFF but `monolith-api` has no valid destination; Azure currently requires Catalog ON. |
-| Basket/Order 503 Problem Details | The corresponding service flag is OFF; enable it and restart to use that API. |
+| 503 with `Basket API is disabled` or `Order API is disabled` | The corresponding service flag is OFF; enable it and restart to use that API. |
+| 503 with `code: circuit_open` | The selected backend circuit is open or a recovery trial is in progress. Inspect its transition logs and the backend; use `Retry-After` when present. |
+| Circuit-breaker options validation error | Check the effective `CircuitBreaker` settings against the ranges above. |
 | Legacy API 503 in Production | PublicApi has no Azure destination; Web sign-in uses the Web login route. |
 | Swagger 404 outside Development | Expected gateway policy, including JSON and UI assets. |
 | 429 | That IP exhausted the policy budget on this instance; API and login have separate budgets. |
@@ -416,11 +517,15 @@ verification remain follow-up work as described above.
 | [ServiceRouteMetadata.cs](ServiceRouteMetadata.cs) | Service metadata key and supported labels. |
 | [ServiceRoutingFilter.cs](ServiceRoutingFilter.cs) | Apply cluster selection by service metadata. |
 | [ServiceToggleMiddleware.cs](Middleware/ServiceToggleMiddleware.cs) | Return 503 for disabled managed API routes. |
+| [GatewayCircuitBreakerMiddleware.cs](Middleware/GatewayCircuitBreakerMiddleware.cs) | Wrap protected forwarding, classify outcomes and return `circuit_open` responses. |
+| [GatewayCircuitBreakerRegistry.cs](Resilience/GatewayCircuitBreakerRegistry.cs) | Retain one Polly pipeline per cluster, configure thresholds and log transitions. |
+| [GatewayCircuitBreakerOptions.cs](Resilience/GatewayCircuitBreakerOptions.cs) | Define the circuit-breaker configuration section and defaults. |
+| [ProxyOutcome.cs](Resilience/ProxyOutcome.cs) | Represent the proxy result used by the breaker. |
+| [ProxyOutcomeClassifier.cs](Resilience/ProxyOutcomeClassifier.cs) | Distinguish backend failures from client/local proxy outcomes. |
 | [ProxyTimeoutMiddleware.cs](Middleware/ProxyTimeoutMiddleware.cs) | Normalize eligible gateway deadline cancellations to 504. |
 | [GatewayRateLimitingExtensions.cs](Extensions/GatewayRateLimitingExtensions.cs) | Configure the API/login policies and validate limits. |
 | [GatewayForwardedHeadersExtensions.cs](Extensions/GatewayForwardedHeadersExtensions.cs) | Configure trusted forwarded IP/scheme processing. |
 
-When adding a managed route, declare its service metadata and choose its
-priority, transforms, rate policy and timeout. Extend the routing tests and
-route table. A new route for an existing service does not require a route-ID
-list in the filter.
+Managed routes declare service metadata, priority, transforms, rate policy and
+timeout. Routing and circuit protection use that metadata and the selected
+cluster, rather than route-ID lists.

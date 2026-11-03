@@ -41,6 +41,24 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 ![ER-diagram](docs/images/ER_diagram.png)
 
+### API Gateway og circuit breaker
+
+API Gateway er implementeret med YARP og Polly.Core. Catalog-, Basket- og
+Order-API-ruter med service-metadata anvender circuit breaker med separat
+tilstand pr. valgt backend-cluster. Ved gentagne backend-fejl afviser gatewayen kald med HTTP 503
+og `code: circuit_open`; efter pausen tillades et prøvekald til backend.
+Rate limiting og request-timeouts håndteres fortsat af ASP.NET Core.
+
+Standardværdierne er 50 % fejl, mindst 5 afsluttede kald i et vindue på 30 sekunder
+og en pause på 15 sekunder. Den lokale gateway-testsuite er verificeret med
+254 beståede tests. En lokal demonstration har også verificeret, at Catalog
+afskærmes under fejl, mens Basket forbliver tilgængelig, og at trafikken genoptages
+efter et vellykket prøvekald.
+
+- [Gateway: opsætning, routing, circuit breaker og fejlsøgning](src/ApiGateway/README.md)
+- [Tests og observerede resultater fra den lokale demonstration](tests/ApiGateway.Tests/README.md)
+- [Arkitekturbeslutning: circuit breaker pr. backend-cluster](docs/adr/0001-gateway-circuit-breaker.md)
+
 ---
 
 ## ☁️ Azure (produktion)
@@ -96,13 +114,14 @@ Kontakt Michael (mpeder75) for at få en invitation. Når du har accepteret:
 
 ## ⚙️ Opsætning (lokal udvikling)
 
-> Udvides i takt med at vi implementerer flere teknologier (RabbitMQ, API Gateway, Docker osv.).
+Gatewayens lokale opsætning og Docker-kommandoer er beskrevet i
+[gatewayens README](src/ApiGateway/README.md#run-locally).
 
 ### Forudsætninger
 
 | Værktøj | Krav | Note |
 | ------- | ---- | ---- |
-| **.NET 8 SDK** | Påkrævet — **SDK, ikke kun runtime** | `global.json` låser projektet til 8.0-serien (`rollForward: latestFeature`). En nyere SDK som .NET 10 bruges **ikke** til dette projekt, så har du kun .NET 10 installeret, fejler build. Hent SDK 8.0.x her: <https://dotnet.microsoft.com/download/dotnet/8.0> |
+| **.NET 8 SDK** | Påkrævet — **SDK, ikke kun runtime** | `global.json` låser projektet til 8.0-serien (`rollForward: latestMinor`). En nyere SDK som .NET 10 bruges **ikke** til dette projekt, så har du kun .NET 10 installeret, fejler build. Hent SDK 8.0.x her: <https://dotnet.microsoft.com/download/dotnet/8.0> |
 | **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificer med `sqllocaldb info` → skal vise `MSSQLLocalDB`. |
 
 Verificér at det rigtige SDK er på plads:
