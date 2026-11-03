@@ -272,6 +272,9 @@ Responses that have already started are not rewritten.
 After the break, the next request becomes the recovery trial. One trial is
 allowed at a time; concurrent calls are rejected while it is in progress. A
 successful trial closes the circuit, and a qualifying failure opens it again.
+If the client cancels the recovery trial, the circuit opens for another full
+break period because recovery was not established. Client cancellation during
+normal traffic retains its exclusion from backend failures.
 Opening does not cancel requests already in flight. The gateway adds no
 automatic retries or outage fallback. Polly supplies only the circuit breaker;
 ASP.NET Core still supplies rate limiting and request timeouts.
@@ -281,7 +284,7 @@ gateway counts those responses without distinguishing that underlying cause.
 
 [ADR 0001](../../docs/adr/0001-gateway-circuit-breaker.md) records the implemented
 decision. The [test documentation](../../tests/ApiGateway.Tests/README.md#recorded-local-verification)
-records the 254-test result and the running local outage/recovery demonstration.
+records the 255-test result and the running local outage/recovery demonstration.
 
 ### HTTPS and Swagger
 
@@ -444,7 +447,7 @@ limits, production Host/HSTS policies, Development-only Swagger, timeouts and
 circuit breaking. Breaker coverage includes thresholds, per-cluster isolation,
 short-circuit rejection, recovery and reopening, concurrent recovery trials,
 failure classification, configuration validation and single-attempt writes.
-The recorded local Release run passed all 254 cases. Tests do not contact Azure
+The recorded local Release run passed all 255 cases. Tests do not contact Azure
 or require backend databases.
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests

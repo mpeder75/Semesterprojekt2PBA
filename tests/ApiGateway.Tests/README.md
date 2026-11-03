@@ -34,11 +34,11 @@ its own host and configuration without process-wide environment-variable changes
 | [ProxyOutcomeClassifierTests](ProxyOutcomeClassifierTests.cs) | 34 | Selected backend status/transport errors, client cancellation, ambiguous/local errors, and destination stream failures combined with proxy abort. |
 | [GatewayCircuitBreakerRegistryTests](GatewayCircuitBreakerRegistryTests.cs) | 12 | Pipeline reuse and concurrent creation, retained failure history, cluster/process-state isolation, local exceptions, minimum throughput, failure ratio and sampling-window expiry. |
 | [CircuitBreakerHttpTests](CircuitBreakerHttpTests.cs) | 11 | Opening and rejection without forwarding, Problem Details and Retry-After, shared Catalog route state, selected legacy backend, independent services, excluded routes, and single-attempt POSTs. |
-| [CircuitBreakerRecoveryTests](CircuitBreakerRecoveryTests.cs) | 4 | Successful/failed recovery trials, reopening, and one concurrent trial while other calls are rejected. |
+| [CircuitBreakerRecoveryTests](CircuitBreakerRecoveryTests.cs) | 5 | Successful/failed recovery trials, reopening, one concurrent trial while other calls are rejected, and a client-cancelled trial retaining protection until a later successful trial. |
 | [CircuitBreakerConfigurationTests](CircuitBreakerConfigurationTests.cs) | 11 | Invalid settings stop startup; valid boundary values start and bind correctly. |
 | [CircuitBreakerFailurePolicyTests](CircuitBreakerFailurePolicyTests.cs) | 15 | Ordinary 4xx responses, selected backend 5xx responses, connection failures, gateway deadlines, actual client cancellation, local rate-limit rejections and disabled-service responses. |
 
-These 87 cases exercise the shared implementation with independent circuit
+These 88 cases exercise the shared implementation with independent circuit
 state per selected cluster. Each host has its own registry. FakeTimeProvider
 controls circuit sampling and recovery durations; concurrent trials use
 completion signals instead of timing sleeps. HTTP deadline tests use a short
@@ -58,8 +58,15 @@ documents why the middleware is necessary with the installed versions.
 
 ## Recorded local verification
 
-The local Release gateway run on 3 November 2026 was reported successful:
-**254 passed, 0 failed, 0 skipped**, including all 87 circuit-breaker cases.
+The local Release gateway run on 3 November 2026 passed:
+**255 passed, 0 failed, 0 skipped**, including all 88 circuit-breaker cases.
+
+The cancelled-recovery regression was first run against the previous code and
+failed because the next request was forwarded with HTTP 200 instead of rejected
+with 503. After the correction, it verifies that cancelling the trial stops its
+downstream request, restarts the break period, and permits normal forwarding
+only after a later successful recovery trial. Existing closed-circuit client
+cancellation remains covered separately.
 
 A separate running-gateway demonstration used a controlled local stub to
 simulate Catalog and Basket. The gateway listened on port 5180 and the stub on

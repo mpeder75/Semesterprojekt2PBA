@@ -155,6 +155,88 @@ public sealed class CircuitBreakerRecoveryTests
             trialSucceeds ? 4 : 3);
     }
 
+    [Fact]
+    public async Task Canceled_recovery_trial_does_not_restore_normal_forwarding()
+    {
+        var clock = new FakeTimeProvider();
+        var trialEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var trialStopped = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var trialCompleted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var backendCalls = 0;
+        var completedRequests = 0;
+
+        using var factory = new GatewayFactory(new GatewayOptions
+        {
+            Catalog = true,
+            TimeProvider = clock,
+            Configuration = RecoverySettings(),
+            RequestCompleted = () =>
+            {
+                if (Interlocked.Increment(ref completedRequests) == 3)
+                {
+                    trialCompleted.TrySetResult();
+                }
+            },
+            Backend = async (_, token) =>
+            {
+                var call = Interlocked.Increment(ref backendCalls);
+                if (call <= 2)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+                }
+
+                if (call == 3)
+                {
+                    trialEntered.TrySetResult();
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        trialStopped.TrySetResult();
+                        throw;
+                    }
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+        });
+        using var client = factory.CreateGatewayClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+
+        await AssertResponse(client, factory, HttpStatusCode.InternalServerError, 1);
+        await AssertResponse(client, factory, HttpStatusCode.InternalServerError, 2);
+        clock.Advance(TimeSpan.FromSeconds(61));
+
+        using var cancellation = new CancellationTokenSource();
+        var trial = client.GetAsync("/api/catalog-items", cancellation.Token);
+        try
+        {
+            await trialEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            cancellation.Cancel();
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await trial);
+        await trialCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(trialStopped.Task.IsCompletedSuccessfully);
+        Assert.Equal(3, factory.Requests.Count);
+
+        await AssertResponse(client, factory, HttpStatusCode.ServiceUnavailable, 3);
+        clock.Advance(TimeSpan.FromSeconds(59));
+        await AssertResponse(client, factory, HttpStatusCode.ServiceUnavailable, 3);
+
+        clock.Advance(TimeSpan.FromSeconds(2));
+        await AssertResponse(client, factory, HttpStatusCode.OK, 4);
+        await AssertResponse(client, factory, HttpStatusCode.OK, 5);
+    }
+
     private static async Task AssertResponse(
         HttpClient client,
         GatewayFactory factory,

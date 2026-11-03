@@ -61,6 +61,10 @@ have already started are not rewritten.
 After the break, allow one recovery trial. Concurrent calls are rejected while
 that trial is in progress. A successful trial closes the circuit; a qualifying
 failure opens it again. Opening does not cancel requests already in flight.
+If the client cancels the recovery trial, reopen for another full break period
+because the trial did not establish recovery. Normal-traffic client cancellation
+remains excluded from backend failures. Polly's half-open callback marks the
+trial's execution context so this policy applies to that trial only.
 Opening, half-open and closing transitions are logged with the cluster ID.
 
 ## Configuration
@@ -102,11 +106,11 @@ Protection covers the tagged gateway HTTP routes described above.
 
 ## Verification
 
-The recorded local Release gateway run passed all 254 tests, with zero failures
-and zero skipped tests. The 87 circuit-breaker cases cover classification,
+The recorded local Release gateway run passed all 255 tests, with zero failures
+and zero skipped tests. The 88 circuit-breaker cases cover classification,
 thresholds, retained state, cluster isolation, selected legacy routing,
 configuration validation, rejection without forwarding, recovery and reopening,
-concurrent trials, timeouts, client cancellation, local gateway rejections and
+concurrent and cancelled trials, timeouts, client cancellation, local gateway rejections and
 single-attempt POST forwarding.
 
 The running local demonstration also verified two original backend 503s followed

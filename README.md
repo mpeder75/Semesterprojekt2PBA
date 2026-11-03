@@ -51,7 +51,7 @@ Rate limiting og request-timeouts håndteres fortsat af ASP.NET Core.
 
 Standardværdierne er 50 % fejl, mindst 5 afsluttede kald i et vindue på 30 sekunder
 og en pause på 15 sekunder. Den lokale gateway-testsuite er verificeret med
-254 beståede tests. En lokal demonstration har også verificeret, at Catalog
+255 beståede tests. En lokal demonstration har også verificeret, at Catalog
 afskærmes under fejl, mens Basket forbliver tilgængelig, og at trafikken genoptages
 efter et vellykket prøvekald.
 

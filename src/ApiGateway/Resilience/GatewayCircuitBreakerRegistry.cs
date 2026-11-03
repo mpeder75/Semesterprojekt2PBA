@@ -7,6 +7,9 @@ namespace ApiGateway.Resilience;
 
 public sealed class GatewayCircuitBreakerRegistry : IDisposable, IAsyncDisposable
 {
+    private static readonly ResiliencePropertyKey<bool> RecoveryTrialKey =
+        new("GatewayCircuitBreaker.RecoveryTrial");
+
     private readonly ResiliencePipelineRegistry<string> _pipelines = new();
     private readonly GatewayCircuitBreakerOptions _options;
     private readonly ILogger<GatewayCircuitBreakerRegistry> _logger;
@@ -37,8 +40,15 @@ public sealed class GatewayCircuitBreakerRegistry : IDisposable, IAsyncDisposabl
                 SamplingDuration = TimeSpan.FromSeconds(_options.SamplingDurationSeconds),
                 BreakDuration = TimeSpan.FromSeconds(_options.BreakDurationSeconds),
 
-                ShouldHandle = new PredicateBuilder<ProxyOutcome>()
-                    .HandleResult(outcome => outcome.IsBackendFailure),
+                // A cancelled trial cannot establish recovery. Keep normal client
+                // cancellation excluded, but reopen after an abandoned trial.
+                ShouldHandle = args => ValueTask.FromResult(
+                    args.Outcome.Exception is null
+                    && (args.Outcome.Result.IsBackendFailure
+                        || (args.Outcome.Result.Reason == "client_canceled"
+                            && args.Context.Properties.TryGetValue(
+                                RecoveryTrialKey, out var isRecoveryTrial)
+                            && isRecoveryTrial))),
 
                 OnOpened = args =>
                 {
@@ -48,8 +58,9 @@ public sealed class GatewayCircuitBreakerRegistry : IDisposable, IAsyncDisposabl
                     return ValueTask.CompletedTask;
                 },
 
-                OnHalfOpened = _ =>
+                OnHalfOpened = args =>
                 {
+                    args.Context.Properties.Set(RecoveryTrialKey, true);
                     _logger.LogInformation(
                         "Circuit half-open for {ClusterId}; allowing a recovery trial.",
                         clusterId);
