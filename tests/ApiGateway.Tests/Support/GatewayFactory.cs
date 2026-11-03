@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -27,6 +27,8 @@ internal sealed record GatewayOptions
     public IReadOnlyDictionary<string, string?> Configuration { get; init; }
         = new Dictionary<string, string?>();
     public Func<ForwardedRequest, CancellationToken, Task<HttpResponseMessage>>? Backend { get; init; }
+    public TimeProvider? TimeProvider { get; init; }
+    public Action? RequestCompleted { get; init; }
 }
 
 internal sealed record ForwardedRequest(
@@ -103,11 +105,18 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
 
         builder.ConfigureTestServices(services =>
         {
+            if (_options.TimeProvider is { } timeProvider)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(timeProvider);
+            }
             services.RemoveAll<IForwarderHttpClientFactory>();
             services.AddSingleton<IForwarderHttpClientFactory>(
                 new StubClientFactory(Requests, _options.Backend));
             services.AddSingleton<IStartupFilter>(
-                new PeerAddressStartupFilter(IPAddress.Parse(_options.PeerAddress)));
+                                                new PeerAddressStartupFilter(
+                                                    IPAddress.Parse(_options.PeerAddress),
+                                                    _options.RequestCompleted));
         });
     }
 
@@ -134,17 +143,27 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
         }
     }
 
-    private sealed class PeerAddressStartupFilter(IPAddress address) : IStartupFilter
+    private sealed class PeerAddressStartupFilter(
+      IPAddress address, Action? requestCompleted) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
             => app =>
             {
-                app.Use((context, continuation) =>
+                app.Use(async (context, continuation) =>
                 {
                     context.Connection.RemoteIpAddress = address;
                     context.Connection.RemotePort = 43210;
-                    return continuation(context);
+
+                    try
+                    {
+                        await continuation(context);
+                    }
+                    finally
+                    {
+                        requestCompleted?.Invoke();
+                    }
                 });
+
                 next(app);
             };
     }

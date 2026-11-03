@@ -2,8 +2,33 @@
 using ApiGateway;
 using Microsoft.FeatureManagement;
 using ApiGateway.Middleware;
+using ApiGateway.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOptions<GatewayCircuitBreakerOptions>()
+    .Bind(builder.Configuration.GetRequiredSection(
+        GatewayCircuitBreakerOptions.SectionName))
+    .Validate(
+        options => double.IsFinite(options.FailureRatio)
+            && options.FailureRatio > 0
+            && options.FailureRatio <= 1,
+        "CircuitBreaker:FailureRatio must be greater than 0 and at most 1.")
+    .Validate(
+        options => options.MinimumThroughput >= 2,
+        "CircuitBreaker:MinimumThroughput must be at least 2.")
+    .Validate(
+        options => options.SamplingDurationSeconds >= 1
+            && options.SamplingDurationSeconds <= 86_400,
+        "CircuitBreaker:SamplingDurationSeconds must be between 1 and 86400.")
+    .Validate(
+        options => options.BreakDurationSeconds >= 1
+            && options.BreakDurationSeconds <= 86_400,
+        "CircuitBreaker:BreakDurationSeconds must be between 1 and 86400.")
+    .ValidateOnStart();
+
+builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddSingleton<GatewayCircuitBreakerRegistry>();
 
 builder.Services.AddFeatureManagement();
 builder.Services.AddSingleton<ServiceRoutingSelection>();
@@ -60,9 +85,10 @@ if (!app.Environment.IsDevelopment())
 
 app.UseRouting();
 app.UseRateLimiter();
-app.UseRequestTimeouts();
 
 app.UseMiddleware<ServiceToggleMiddleware>();
+app.UseMiddleware<GatewayCircuitBreakerMiddleware>();
+app.UseRequestTimeouts();
 app.UseMiddleware<ProxyTimeoutMiddleware>();
 
 app.MapGet("/health/gateway", () => Results.Ok(new { status = "Running" }));
