@@ -59,6 +59,20 @@ efter et vellykket prøvekald.
 - [Tests og observerede resultater fra den lokale demonstration](tests/ApiGateway.Tests/README.md)
 - [Arkitekturbeslutning: circuit breaker pr. backend-cluster](docs/adr/0001-gateway-circuit-breaker.md)
 
+### Inventory Service
+
+Inventory Service har egen SQL Server-database og HTTP-endpoints til at oprette,
+hente, ændre og slette lagerposter samt reservere og frigive varer pr. ordre.
+Reserverede varer trækkes fra den tilgængelige beholdning. Servicen er udviklet test-first med
+unit tests og HTTP-integrationstests mod SQL Server. Den kører selvstændigt uden
+RabbitMQ og er endnu ikke tilføjet til gatewayens routing.
+
+Strukturen følger onion-principper med domæneregler i `Entities`, kontrakter i
+`Interfaces`, operationer i `Services` og databaseadgang, transaktioner og migrations
+i `Repositories`. Servicelaget anvender repository-interfacet og indeholder ingen EF Core-kode.
+
+- [Inventory: lokal opstart, API og tests](src/InventoryService.api/README.md)
+
 ---
 
 ## ☁️ Azure (produktion)
