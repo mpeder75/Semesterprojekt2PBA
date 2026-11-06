@@ -8,13 +8,24 @@ public class Order : BaseEntity, IAggregateRoot
 #pragma warning disable CS8618 // Required by Entity Framework
     private Order() { }
 
-    public Order(string buyerId, Address shipToAddress, List<OrderItem> items)
+    public Order(string buyerId, Address shipToAddress, List<OrderItem> items, Guid? checkoutId = null)
     {
         Guard.Against.NullOrEmpty(buyerId);
 
         BuyerId = buyerId;
         ShipToAddress = shipToAddress;
         _orderItems = items;
+        CheckoutId = checkoutId;
+
+        if (checkoutId.HasValue)
+        {
+            Status = OrderStatus.PendingInventory;
+        }
+        else
+        {
+            Status = OrderStatus.Confirmed;
+        }
+
     }
 
     public string BuyerId { get; private set; }
@@ -42,5 +53,24 @@ public class Order : BaseEntity, IAggregateRoot
         }
 
         return total;
+    }
+
+    public OrderStatus Status { get; private set; }
+    public Guid? CheckoutId { get; private set; }
+
+
+    public void Confirm()
+    {
+        Status = OrderStatus.Confirmed;
+    }
+
+    public void Reject()
+    {
+        Status = OrderStatus.Rejected;
+    }
+
+    public void Cancel()
+    {
+        Status = OrderStatus.Cancelled;
     }
 }
