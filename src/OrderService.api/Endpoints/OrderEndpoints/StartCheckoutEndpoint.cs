@@ -2,14 +2,16 @@
 using MinimalApi.Endpoint;
 using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
+using OrderService.api.Services;
 using OrderService.api.Specifications;
 
 namespace OrderService.api.Endpoints.OrderEndpoints;
 
-public class StartCheckoutEndpoint : IEndpoint<IResult, StartCheckoutRequest, Guid, IRepository<CheckoutProcess>>
+// Bruger det ikke-generiske IEndpoint, fordi IEndpoint<...> kun understøtter op til 3 parametre
+public class StartCheckoutEndpoint : IEndpoint
 {
     public async Task<IResult> HandleAsync(StartCheckoutRequest request, Guid checkoutId,
-        IRepository<CheckoutProcess> checkoutRepository)
+        IRepository<CheckoutProcess> checkoutRepository, CheckoutProcessManager manager)
     {
         if (checkoutId == Guid.Empty)
         {
@@ -40,6 +42,9 @@ public class StartCheckoutEndpoint : IEndpoint<IResult, StartCheckoutRequest, Gu
 
         await checkoutRepository.AddAsync(checkoutProcess);
 
+        // Tag første trin i flowet (AwaitingBasket -> AwaitingCatalog)
+        await manager.AdvanceOrderAsync(checkoutId);
+
         return AcceptedResponse(request, checkoutProcess.CheckoutId);
     }
 
@@ -59,9 +64,10 @@ public class StartCheckoutEndpoint : IEndpoint<IResult, StartCheckoutRequest, Gu
         app.MapPost("api/orders/checkouts",
                 async (StartCheckoutRequest request,
                     [FromHeader(Name = "Idempotency-Key")] Guid checkoutId,
-                    IRepository<CheckoutProcess> checkoutRepository) =>
+                    IRepository<CheckoutProcess> checkoutRepository,
+                    CheckoutProcessManager manager) =>
                 {
-                    return await HandleAsync(request, checkoutId, checkoutRepository);
+                    return await HandleAsync(request, checkoutId, checkoutRepository, manager);
                 })
             .Produces<StartCheckoutResponse>(StatusCodes.Status202Accepted)
             .WithTags("OrderEndpoints");
