@@ -1,6 +1,8 @@
-﻿namespace OrderService.api.Entities.OrderAggregate;
+﻿using OrderService.api.Interfaces;
 
-public class CheckoutProcess : BaseEntity
+namespace OrderService.api.Entities.OrderAggregate;
+
+public class CheckoutProcess : BaseEntity, IAggregateRoot
 {
     public Guid CheckoutId { get; private set; }
     public CheckoutState State { get; private set; }
