@@ -43,7 +43,7 @@ public sealed class BasketMessageDispatcher : IBasketMessageDispatcher
 
         if (handlerInterface is null)
         {
-            throw new InvalidOperationException($"No reply for handler registered for {message.GetType().Name}");
+            throw new InvalidOperationException($"No reply for handler registered for {message.GetType().Name}.");
         }
 
         var reply = await handlerInterface.HandleAsync(
@@ -51,6 +51,6 @@ public sealed class BasketMessageDispatcher : IBasketMessageDispatcher
             message,
             cancellationToken);
 
-        return reply ?? throw new InvalidOperationException($"Request handler for {message.GetType().Name} returend a null reply");
+        return reply ?? throw new InvalidOperationException($"Request handler for {message.GetType().Name} returend a null reply.");
     }
 }

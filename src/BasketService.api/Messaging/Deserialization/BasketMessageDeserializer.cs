@@ -20,7 +20,6 @@ public sealed class BasketMessageDeserializer : IBasketMessageDeserializer
         if (!typeof(IBasketMessage).IsAssignableFrom(messageType)) 
         {
             throw new ArgumentException($"{messageType.Name} must implement IBasketMessage");
-
         }
 
         return (IBasketMessage?)JsonSerializer.Deserialize(
