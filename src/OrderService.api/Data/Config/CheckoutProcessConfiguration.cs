@@ -1,0 +1,43 @@
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using OrderService.api.Entities.OrderAggregate;
+
+namespace OrderService.api.Data.Config;
+
+public class CheckoutProcessConfiguration : IEntityTypeConfiguration<CheckoutProcess>
+{
+    public void Configure(EntityTypeBuilder<CheckoutProcess> builder)
+    {
+        builder.Property(b => b.BuyerId)
+            .IsRequired()
+            .HasMaxLength(256);
+
+        builder.HasIndex(o => o.CheckoutId).IsUnique();
+
+        builder.OwnsOne(o => o.ShipToAddress, a =>
+        {
+            a.WithOwner();
+
+            a.Property(a => a.ZipCode)
+                .HasMaxLength(18)
+                .IsRequired();
+
+            a.Property(a => a.Street)
+                .HasMaxLength(180)
+                .IsRequired();
+
+            a.Property(a => a.State)
+                .HasMaxLength(60);
+
+            a.Property(a => a.Country)
+                .HasMaxLength(90)
+                .IsRequired();
+
+            a.Property(a => a.City)
+                .HasMaxLength(100)
+                .IsRequired();
+        });
+
+        builder.Navigation(x => x.ShipToAddress).IsRequired();
+    }
+}

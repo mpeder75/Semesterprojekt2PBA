@@ -22,6 +22,39 @@ namespace OrderService.api.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BasketId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BuyerId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("CheckoutId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutId")
+                        .IsUnique();
+
+                    b.ToTable("CheckoutProcesses");
+                });
+
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>
                 {
                     b.Property<int>("Id")
@@ -75,6 +108,50 @@ namespace OrderService.api.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("OrderItems");
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.OwnsOne("OrderService.api.Entities.OrderAggregate.Address", "ShipToAddress", b1 =>
+                        {
+                            b1.Property<int>("CheckoutProcessId")
+                                .HasColumnType("int");
+
+                            b1.Property<string>("City")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("nvarchar(100)");
+
+                            b1.Property<string>("Country")
+                                .IsRequired()
+                                .HasMaxLength(90)
+                                .HasColumnType("nvarchar(90)");
+
+                            b1.Property<string>("State")
+                                .IsRequired()
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)");
+
+                            b1.Property<string>("Street")
+                                .IsRequired()
+                                .HasMaxLength(180)
+                                .HasColumnType("nvarchar(180)");
+
+                            b1.Property<string>("ZipCode")
+                                .IsRequired()
+                                .HasMaxLength(18)
+                                .HasColumnType("nvarchar(18)");
+
+                            b1.HasKey("CheckoutProcessId");
+
+                            b1.ToTable("CheckoutProcesses");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CheckoutProcessId");
+                        });
+
+                    b.Navigation("ShipToAddress")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>
