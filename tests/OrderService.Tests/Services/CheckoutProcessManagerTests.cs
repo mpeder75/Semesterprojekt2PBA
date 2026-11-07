@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Ardalis.Specification;
 using NSubstitute;
 using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
+using OrderService.api.Messages;
 using OrderService.api.Messages.Basket;
 using OrderService.api.Messages.Catalog;
 using OrderService.api.Messages.Inventory;
@@ -12,11 +14,14 @@ namespace OrderService.Tests.Services;
 
 public class CheckoutProcessManagerTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IRepository<CheckoutProcess> _checkoutRepo = Substitute.For<IRepository<CheckoutProcess>>();
     private readonly IRepository<Order> _orderRepo = Substitute.For<IRepository<Order>>();
     private readonly IBasketClient _basket = Substitute.For<IBasketClient>();
     private readonly ICatalogClient _catalog = Substitute.For<ICatalogClient>();
     private readonly IInventoryClient _inventory = Substitute.For<IInventoryClient>();
+    private readonly ICheckoutRequestProducer _producer = Substitute.For<ICheckoutRequestProducer>();
     private readonly CheckoutProcessManager _manager;
 
     // Den ordre manageren opretter, så vi kan finde den igen og kontrollere dens status
@@ -24,7 +29,7 @@ public class CheckoutProcessManagerTests
 
     public CheckoutProcessManagerTests()
     {
-        _manager = new CheckoutProcessManager(_checkoutRepo, _basket, _catalog, _inventory, _orderRepo);
+        _manager = new CheckoutProcessManager(_checkoutRepo, _basket, _catalog, _inventory, _orderRepo, _producer);
 
         // Når manageren gemmer en ordre, husker vi den ...
         _orderRepo.AddAsync(Arg.Do<Order>(o => _savedOrder = o), Arg.Any<CancellationToken>());
@@ -36,26 +41,48 @@ public class CheckoutProcessManagerTests
 
     // ---------- hjælpere ----------
 
-    private static CheckoutProcess NewCheckout() =>
+    /// <summary>En helt ny checkout, der står i AwaitingBasket og endnu ikke har fået svar fra Basket.</summary>
+    private static CheckoutProcess FreshCheckout() =>
         new(Guid.NewGuid(), basketId: 1, buyerId: "test@test.dk", new AddressBuilder().WithDefaultValues());
+
+    /// <summary>
+    /// En checkout, hvor Basket allerede har svaret: den har to varelinjer og står i AwaitingCatalog.
+    /// Bruges af de tests, der starter efter Basket-trinnet.
+    /// </summary>
+    private static CheckoutProcess CheckoutAfterBasketReply()
+    {
+        var checkout = FreshCheckout();
+        checkout.SetLines(new[] { new CheckoutLine(1, 2), new CheckoutLine(2, 1) });
+        checkout.MoveTo(CheckoutState.AwaitingCatalog);
+        return checkout;
+    }
+
+    private static CheckoutMessageEnvelope ReplyEnvelope(CheckoutProcess checkout, Guid correlationId, string messageType, object payload) =>
+        new()
+        {
+            MessageId = Guid.NewGuid(),
+            CheckoutId = checkout.CheckoutId,
+            CorrelationId = correlationId,
+            MessageType = messageType,
+            SentAtUtc = DateTimeOffset.UtcNow,
+            Payload = JsonSerializer.SerializeToElement(payload, payload.GetType(), JsonOptions)
+        };
+
+    private static BasketPreparedPayload TwoBasketLines() =>
+        new()
+        {
+            Items = new List<BasketLineDto>
+            {
+                new() { CatalogItemId = 1, Quantity = 2 },
+                new() { CatalogItemId = 2, Quantity = 1 }
+            }
+        };
 
     private void CheckoutIs(CheckoutProcess? checkout)
     {
         _checkoutRepo.FirstOrDefaultAsync(Arg.Any<ISpecification<CheckoutProcess>>(), Arg.Any<CancellationToken>())
             .Returns(checkout);
     }
-
-    private void BasketReturnsTwoLines() =>
-        _basket.PrepareBasketForCheckoutAsync(Arg.Any<int>(), Arg.Any<string>())
-            .Returns(new PrepareBasketResult
-            {
-                IsSuccess = true,
-                Items = new List<BasketLineDto>
-                {
-                    new() { CatalogItemId = 1, Quantity = 2 },
-                    new() { CatalogItemId = 2, Quantity = 1 }
-                }
-            });
 
     private void CatalogReturnsBothItems() =>
         _catalog.GetCatalogItemsByIdsAsync(Arg.Any<List<int>>())
@@ -91,18 +118,129 @@ public class CheckoutProcessManagerTests
 
     private void EverythingSucceeds()
     {
-        BasketReturnsTwoLines();
         CatalogReturnsBothItems();
         InventoryAcceptsReserveAndConfirm();
         BasketCompleteSucceeds();
     }
 
-    // ---------- lykkelig vej ----------
+    // ---------- Basket-trinnet: send request, og behandl svaret ----------
+
+    [Fact]
+    public async Task AwaitingBasket_SendsPrepareRequestToBasketAndWaits()
+    {
+        var checkout = FreshCheckout();
+        CheckoutIs(checkout);
+
+        Guid? sentCorrelationId = null;
+        object? sentPayload = null;
+        await _producer.SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid>(),
+            Arg.Do<Guid>(c => sentCorrelationId = c),
+            Arg.Do<object>(p => sentPayload = p),
+            Arg.Any<CancellationToken>());
+
+        await _manager.AdvanceOrderAsync(checkout.CheckoutId);
+
+        await _producer.Received(1).SendAsync(
+            CheckoutQueues.Basket, "PrepareBasketForCheckout", checkout.CheckoutId,
+            Arg.Any<Guid>(), Arg.Any<object>(), Arg.Any<CancellationToken>());
+
+        // Checkouten venter på svaret og husker, hvilket svar det er
+        Assert.Equal(CheckoutState.AwaitingBasket, checkout.State);
+        Assert.NotNull(checkout.ExpectedCorrelationId);
+        Assert.Equal(sentCorrelationId, checkout.ExpectedCorrelationId);
+
+        var payload = Assert.IsType<PrepareBasketForCheckoutPayload>(sentPayload);
+        Assert.Equal(checkout.BasketId, payload.BasketId);
+        Assert.Equal(checkout.BuyerId, payload.BuyerId);
+
+        // Det gamle, synkrone kald bruges ikke længere
+        await _basket.DidNotReceiveWithAnyArgs().PrepareBasketForCheckoutAsync(default, default!);
+    }
+
+    [Fact]
+    public async Task BasketPreparedReply_SavesLinesAndContinuesTheFlow()
+    {
+        var checkout = FreshCheckout();
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        CheckoutIs(checkout);
+        EverythingSucceeds();
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(checkout, correlationId, "BasketPrepared", TwoBasketLines()));
+
+        // Linjerne fra Basket er gemt ...
+        Assert.Equal(2, checkout.Lines.Count);
+        Assert.Contains(checkout.Lines, l => l.CatalogItemId == 1 && l.Quantity == 2);
+        Assert.Contains(checkout.Lines, l => l.CatalogItemId == 2 && l.Quantity == 1);
+
+        // ... og flowet er kørt videre fra AwaitingCatalog (resten er stadig fake-klienter)
+        await _catalog.Received(1).GetCatalogItemsByIdsAsync(Arg.Any<List<int>>());
+        Assert.Equal(CheckoutState.Completed, checkout.State);
+    }
+
+    [Fact]
+    public async Task BasketPreparedReply_WhenCatalogRejects_StartsTheFailureTrack()
+    {
+        var checkout = FreshCheckout();
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        CheckoutIs(checkout);
+        ReleasesSucceed();
+        _catalog.GetCatalogItemsByIdsAsync(Arg.Any<List<int>>())
+            .Returns(new GetCatalogItemsResult { IsSuccess = false, Reason = "Catalog down" });
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(checkout, correlationId, "BasketPrepared", TwoBasketLines()));
+
+        Assert.Equal(CheckoutState.Failed, checkout.State);
+        await _basket.Received(1).ReleaseBasketCheckoutAsync(checkout.BasketId, checkout.CheckoutId);
+    }
+
+    [Fact]
+    public async Task Reply_WithWrongCorrelationId_IsIgnored()
+    {
+        var checkout = FreshCheckout();
+        checkout.ExpectReply(Guid.NewGuid());
+        CheckoutIs(checkout);
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(checkout, Guid.NewGuid(), "BasketPrepared", TwoBasketLines()));
+
+        Assert.Equal(CheckoutState.AwaitingBasket, checkout.State);
+        Assert.Empty(checkout.Lines);
+    }
+
+    [Fact]
+    public async Task Reply_ForUnknownCheckout_IsIgnored()
+    {
+        var checkout = FreshCheckout();
+        CheckoutIs(null);
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(checkout, Guid.NewGuid(), "BasketPrepared", TwoBasketLines()));
+
+        await _checkoutRepo.DidNotReceiveWithAnyArgs().UpdateAsync(default!);
+    }
+
+    [Fact]
+    public async Task Reply_WithUnknownMessageType_IsIgnored()
+    {
+        var checkout = FreshCheckout();
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        CheckoutIs(checkout);
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(checkout, correlationId, "SomethingElse", TwoBasketLines()));
+
+        Assert.Equal(CheckoutState.AwaitingBasket, checkout.State);
+        Assert.Empty(checkout.Lines);
+        await _checkoutRepo.DidNotReceiveWithAnyArgs().UpdateAsync(default!);
+    }
+
+    // ---------- lykkelig vej (fra Catalog og frem) ----------
 
     [Fact]
     public async Task HappyPath_EndsInCompleted()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
         EverythingSucceeds();
 
@@ -115,7 +253,7 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task HappyPath_SavesCatalogSnapshotOnTheLines()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
         EverythingSucceeds();
 
@@ -131,7 +269,7 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task HappyPath_CreatesOrderWithItemsAndConfirmsIt()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
         EverythingSucceeds();
 
@@ -147,7 +285,7 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task HappyPath_ReservesStockWithCheckoutIdAndAllLines()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
         EverythingSucceeds();
 
@@ -164,7 +302,7 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task HappyPath_DoesNotRunTheFailureTrack()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
         EverythingSucceeds();
 
@@ -177,29 +315,10 @@ public class CheckoutProcessManagerTests
     // ---------- fejl-sporet: en afvisning sender checkouten til Failed efter oprydning ----------
 
     [Fact]
-    public async Task BasketRejects_GoesStraightToFailedWithNothingToRelease()
-    {
-        var checkout = NewCheckout();
-        CheckoutIs(checkout);
-        _basket.PrepareBasketForCheckoutAsync(Arg.Any<int>(), Arg.Any<string>())
-            .Returns(new PrepareBasketResult { IsSuccess = false, Reason = "Basket is empty" });
-
-        await _manager.AdvanceOrderAsync(checkout.CheckoutId);
-
-        Assert.Equal(CheckoutState.Failed, checkout.State);
-        Assert.Contains("Basket is empty", checkout.FailureReason);
-        await _catalog.DidNotReceiveWithAnyArgs().GetCatalogItemsByIdsAsync(default!);
-        await _inventory.DidNotReceiveWithAnyArgs().ReserveStock(default, default, default!);
-        await _basket.DidNotReceiveWithAnyArgs().ReleaseBasketCheckoutAsync(default, default);
-        await _inventory.DidNotReceiveWithAnyArgs().ReleaseStockReservation(default);
-    }
-
-    [Fact]
     public async Task CatalogRejects_ReleasesBasketAndFails()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         ReleasesSucceed();
         _catalog.GetCatalogItemsByIdsAsync(Arg.Any<List<int>>())
             .Returns(new GetCatalogItemsResult { IsSuccess = false, Reason = "Catalog down" });
@@ -217,9 +336,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task CatalogMissingAnItem_ReleasesBasketAndFails()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         ReleasesSucceed();
         // Catalog kender kun vare 1, selvom kurven indeholder 1 og 2
         _catalog.GetCatalogItemsByIdsAsync(Arg.Any<List<int>>())
@@ -243,9 +361,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task InventoryRejectsReservation_RejectsOrderReleasesBasketOnlyAndFails()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         CatalogReturnsBothItems();
         ReleasesSucceed();
         _inventory.ReserveStock(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<List<StockLineDto>>())
@@ -265,9 +382,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task InventoryRejectsConfirmation_RejectsOrderThenReleasesStockThenBasketAndFails()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         CatalogReturnsBothItems();
         ReleasesSucceed();
         _inventory.ReserveStock(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<List<StockLineDto>>())
@@ -293,9 +409,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task ReleaseStockFails_StaysInReleasingStockAndDoesNotReleaseBasketYet()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         CatalogReturnsBothItems();
         _inventory.ReserveStock(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<List<StockLineDto>>())
             .Returns(new ReserveStockResult { IsSuccess = true });
@@ -313,9 +428,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task ReleaseBasketFails_StaysInReleasingBasket()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         _catalog.GetCatalogItemsByIdsAsync(Arg.Any<List<int>>())
             .Returns(new GetCatalogItemsResult { IsSuccess = false, Reason = "Catalog down" });
         _basket.ReleaseBasketCheckoutAsync(Arg.Any<int>(), Arg.Any<Guid>())
@@ -329,7 +443,7 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task CheckoutStuckInReleasingBasket_CompletesTheCleanupWhenAdvancedAgain()
     {
-        var checkout = NewCheckout();
+        var checkout = FreshCheckout();
         checkout.MoveTo(CheckoutState.ReleasingBasket);
         CheckoutIs(checkout);
         ReleasesSucceed();
@@ -344,9 +458,8 @@ public class CheckoutProcessManagerTests
     [Fact]
     public async Task BasketCleanupFails_OrderIsStillConfirmedAndCheckoutWaitsForCleanup()
     {
-        var checkout = NewCheckout();
+        var checkout = CheckoutAfterBasketReply();
         CheckoutIs(checkout);
-        BasketReturnsTwoLines();
         CatalogReturnsBothItems();
         InventoryAcceptsReserveAndConfirm();
         _basket.CompleteBasketCheckoutAsync(Arg.Any<int>(), Arg.Any<Guid>())
@@ -370,7 +483,7 @@ public class CheckoutProcessManagerTests
 
         await _manager.AdvanceOrderAsync(Guid.NewGuid());
 
-        await _basket.DidNotReceiveWithAnyArgs().PrepareBasketForCheckoutAsync(default, default!);
+        await _producer.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default, default, default!);
         await _checkoutRepo.DidNotReceiveWithAnyArgs().UpdateAsync(default!);
     }
 
@@ -379,14 +492,14 @@ public class CheckoutProcessManagerTests
     [InlineData(CheckoutState.Failed)]
     public async Task FinishedCheckout_DoesNotCallAnyone(CheckoutState finalState)
     {
-        var checkout = NewCheckout();
+        var checkout = FreshCheckout();
         checkout.MoveTo(finalState);
         CheckoutIs(checkout);
 
         await _manager.AdvanceOrderAsync(checkout.CheckoutId);
 
         Assert.Equal(finalState, checkout.State);
-        await _basket.DidNotReceiveWithAnyArgs().PrepareBasketForCheckoutAsync(default, default!);
+        await _producer.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default, default, default!);
         await _basket.DidNotReceiveWithAnyArgs().ReleaseBasketCheckoutAsync(default, default);
         await _inventory.DidNotReceiveWithAnyArgs().ReserveStock(default, default, default!);
         await _inventory.DidNotReceiveWithAnyArgs().ReleaseStockReservation(default);

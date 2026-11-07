@@ -1,4 +1,5 @@
-﻿using OrderService.api.Entities.OrderAggregate;
+﻿using System.Text.Json;
+using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
 using OrderService.api.Messages;
 using OrderService.api.Messages.Basket;
@@ -19,10 +20,8 @@ public class CheckoutProcessManager
     private readonly IInventoryClient _inventoryClient;
     private readonly IRepository<Order> _orderRepository;
     private readonly ICheckoutRequestProducer _producer;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// Modtager de afhængigheder, manageren bruger. De leveres af .NET (dependency injection).
-    /// </summary>
     public CheckoutProcessManager(IRepository<CheckoutProcess> repository, IBasketClient basketClient,
         ICatalogClient catalogClient, IInventoryClient inventoryClient, IRepository<Order> orderRepository, ICheckoutRequestProducer producer)
     {
@@ -116,20 +115,8 @@ public class CheckoutProcessManager
     /// </summary>
     private async Task<bool> HandleAwaitingBasketAsync(CheckoutProcess checkout)
     {
-        var result = await _basketClient.PrepareBasketForCheckoutAsync(checkout.BasketId, checkout.BuyerId);
-
-        if (!result.IsSuccess)
-        {
-            return await FailAsync(checkout, $"Basket rejected the checkout: {result.Reason}", CheckoutState.Failed);
-        }
-
-        var lines = result.Items.Select(i => new CheckoutLine(i.CatalogItemId, i.Quantity));
-        checkout.SetLines(lines);
-
-        checkout.MoveTo(CheckoutState.AwaitingCatalog);
-
-        await _repository.UpdateAsync(checkout);
-        return true;
+        await SendPrepareBasketAsync(checkout);
+        return false;
     }
 
     /// <summary>
@@ -178,6 +165,20 @@ public class CheckoutProcessManager
         switch (envelope.MessageType)
         {
             case "BasketPrepared":
+                var payload = envelope.Payload.Deserialize<BasketPreparedPayload>(JsonOptions);
+
+                if (payload is null)
+                {
+                    return;
+                }
+
+                var checkOutLines = payload.Items.Select(i => new CheckoutLine(i.CatalogItemId, i.Quantity));
+                checkout.SetLines(checkOutLines);
+                checkout.MoveTo(CheckoutState.AwaitingCatalog);
+
+                await _repository.UpdateAsync(checkout);
+
+                await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
             default:

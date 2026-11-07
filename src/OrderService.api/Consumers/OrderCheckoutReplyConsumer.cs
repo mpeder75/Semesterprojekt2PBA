@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 using OrderService.api.Messages;
+using OrderService.api.Services;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -45,6 +46,10 @@ public class OrderCheckoutReplyConsumer : BackgroundService
                 var envelope = JsonSerializer.Deserialize<CheckoutMessageEnvelope>(body, JsonOptions)
                               ?? throw new InvalidOperationException("Empty reply message");
 
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var manager = scope.ServiceProvider.GetRequiredService<CheckoutProcessManager>();
+                    
+                await manager.HandleReplyAsync(envelope);
                 _logger.LogInformation("Reply received: {MessageType} for checkout {CheckoutId}", envelope.MessageType, envelope.CheckoutId);
 
                 await channel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: stoppingToken);
