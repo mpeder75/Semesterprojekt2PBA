@@ -22,6 +22,30 @@ namespace OrderService.api.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CatalogItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CheckoutProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutProcessId");
+
+                    b.ToTable("CheckoutLine");
+                });
+
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
                 {
                     b.Property<int>("Id")
@@ -108,6 +132,13 @@ namespace OrderService.api.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("OrderItems");
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutLine", b =>
+                {
+                    b.HasOne("OrderService.api.Entities.OrderAggregate.CheckoutProcess", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("CheckoutProcessId");
                 });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
@@ -231,6 +262,11 @@ namespace OrderService.api.Migrations
 
                     b.Navigation("ItemOrdered")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>

@@ -8,6 +8,9 @@ public class CheckoutProcessConfiguration : IEntityTypeConfiguration<CheckoutPro
 {
     public void Configure(EntityTypeBuilder<CheckoutProcess> builder)
     {
+        var navigation = builder.Metadata.FindNavigation(nameof(CheckoutProcess.Lines));
+        navigation?.SetPropertyAccessMode(PropertyAccessMode.Field);
+
         builder.Property(b => b.BuyerId)
             .IsRequired()
             .HasMaxLength(256);
