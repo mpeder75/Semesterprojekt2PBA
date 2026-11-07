@@ -2,7 +2,9 @@ using Ardalis.Specification;
 using NSubstitute;
 using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
-using OrderService.api.Messages;
+using OrderService.api.Messages.Basket;
+using OrderService.api.Messages.Catalog;
+using OrderService.api.Messages.Inventory;
 using OrderService.api.Services;
 using OrderService.Tests.Builders;
 

@@ -1,4 +1,4 @@
-﻿using OrderService.api.Messages;
+﻿using OrderService.api.Messages.Inventory;
 
 namespace OrderService.api.Interfaces;
 

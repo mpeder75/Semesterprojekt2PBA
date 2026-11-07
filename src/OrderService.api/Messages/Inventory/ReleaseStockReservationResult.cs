@@ -1,8 +1,7 @@
-﻿namespace OrderService.api.Messages;
+namespace OrderService.api.Messages.Inventory;
 
-public class ReserveStockResult
+public class ReleaseStockReservationResult
 {
     public bool IsSuccess { get; set; }
     public string Reason { get; set; } = string.Empty;
-
 }

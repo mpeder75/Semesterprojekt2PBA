@@ -4,7 +4,7 @@ using RabbitMQ.Client.Events;
 using System.Text.Json;
 using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
-using OrderService.api.Messages;
+using OrderService.api.Messages.Orders;
 
 namespace OrderService.api.Consumers;
 

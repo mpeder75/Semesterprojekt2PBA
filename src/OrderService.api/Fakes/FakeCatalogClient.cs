@@ -1,5 +1,5 @@
 ﻿using OrderService.api.Interfaces;
-using OrderService.api.Messages;
+using OrderService.api.Messages.Catalog;
 
 namespace OrderService.api.Fakes;
 

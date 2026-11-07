@@ -1,4 +1,4 @@
-﻿namespace OrderService.api.Messages;
+﻿namespace OrderService.api.Messages.Orders;
 
 public class AddressMessage
 {
