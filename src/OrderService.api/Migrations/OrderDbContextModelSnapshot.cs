@@ -36,8 +36,17 @@ namespace OrderService.api.Migrations
                     b.Property<int?>("CheckoutProcessId")
                         .HasColumnType("int");
 
+                    b.Property<string>("PictureUri")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProductName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
 

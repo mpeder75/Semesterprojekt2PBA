@@ -7,7 +7,7 @@ public class CheckoutProcessByCheckoutIdSpec : Specification<CheckoutProcess>
 {
     public CheckoutProcessByCheckoutIdSpec(Guid checkoutId)
     {
-        Query.Where(c => c.CheckoutId == checkoutId);
+        Query.Where(c => c.CheckoutId == checkoutId)
+            .Include(c => c.Lines);
     }
 }
-
