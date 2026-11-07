@@ -11,14 +11,16 @@ public class CheckoutProcessManager
     private readonly ICatalogClient _catalogClient;
     private readonly IRepository<CheckoutProcess> _repository;
     private readonly IInventoryClient _inventoryClient;
+    private readonly IRepository<Order> _orderRepository;
 
     public CheckoutProcessManager(IRepository<CheckoutProcess> repository, IBasketClient basketClient,
-        ICatalogClient catalogClient, IInventoryClient inventoryClient)
+        ICatalogClient catalogClient, IInventoryClient inventoryClient, IRepository<Order> orderRepository)
     {
         _repository = repository;
         _basketClient = basketClient;
         _catalogClient = catalogClient;
         _inventoryClient = inventoryClient;
+        _orderRepository = orderRepository;
     }
 
     public async Task AdvanceOrderAsync(Guid checkoutId)
@@ -51,6 +53,20 @@ public class CheckoutProcessManager
 
                 case CheckoutState.AwaitingStockReservation:
                     if (!await HandleAwaitingStockReservationAsync(checkout))
+                    {
+                        return;
+                    }
+                    break;
+
+                case CheckoutState.AwaitingStockConfirmation:
+                    if (!await HandleAwaitingStockConfirmationAsync(checkout))
+                    {
+                        return;
+                    }
+                    break;
+
+                case CheckoutState.OrderConfirmedCleanupPending:
+                    if (!await HandleOrderConfirmedCleanupPendingAsync(checkout))
                     {
                         return;
                     }
@@ -110,6 +126,7 @@ public class CheckoutProcessManager
 
         // 4. opdater tilstanden
         checkout.MoveTo(CheckoutState.AwaitingStockReservation);
+        
         await _repository.UpdateAsync(checkout);
         return true;
     }
@@ -117,19 +134,84 @@ public class CheckoutProcessManager
     private async Task<bool> HandleAwaitingStockReservationAsync(CheckoutProcess checkout)
     {
 
-        var stockLines = checkout.Lines.Select(l =>
-            new StockLineDto { CatalogItemId = l.CatalogItemId, Quantity = l.Quantity }).ToList();
+        // Lav checkout-linjerne om til ordrelinjer (snapshot fra Catalog)
+        var items = checkout.Lines
+            .Select(l => new OrderItem(
+                new CatalogItemOrdered(l.CatalogItemId, l.ProductName!, l.PictureUri!),
+                l.UnitPrice!.Value,
+                l.Quantity))
+            .ToList();
 
 
-        var result = await _inventoryClient.ReserveStock(checkout.CheckoutId, stockLines);
-        
+        var order = new Order(checkout.BuyerId, checkout.ShipToAddress, items, checkout.CheckoutId);
+
+
+        // Gem den ventende ordre (status PendingInventory), før vi reserverer lager
+        await _orderRepository.AddAsync(order);
+
+        // Reservér lager
+        var stockLines = checkout.Lines
+            .Select(l => new StockLineDto { CatalogItemId = l.CatalogItemId, Quantity = l.Quantity })
+            .ToList();
+
+        var result = await _inventoryClient.ReserveStock(checkout.CheckoutId, order.Id, stockLines);
+
         if (!result.IsSuccess)
         {
             return false;
         }
 
-        checkout.MoveTo(CheckoutState.AwaitingStockConfirmation); 
-        await _repository.UpdateAsync(checkout); 
+        // Opdater tilstanden og gem
+        checkout.MoveTo(CheckoutState.AwaitingStockConfirmation);
+        await _repository.UpdateAsync(checkout);
+
+        return true;
+    }
+
+    private async Task<bool> HandleAwaitingStockConfirmationAsync(CheckoutProcess checkout)
+    {
+        // 1. spørg inventory
+        var result = await _inventoryClient.ConfirmStockReservation(checkout.CheckoutId);
+        
+        if (!result.IsSuccess) { return false; }
+
+        // 2. find ordren
+        var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
+
+        if (order is null)
+        {
+            return false;
+        }
+
+        // 3. bekræft ordren
+        order.Confirm();
+        
+        // 4. opdater ordren
+        await _orderRepository.UpdateAsync(order);
+
+        // 5. opdater tilstanden
+        checkout.MoveTo(CheckoutState.OrderConfirmedCleanupPending);
+
+        // 6. opdater checkout-processen
+        await _repository.UpdateAsync(checkout);
+
+        return true;
+    }
+
+    private async Task<bool> HandleOrderConfirmedCleanupPendingAsync(CheckoutProcess checkout)
+    {
+        // 1. Bed Basket om at tømme den købte kurv
+        var result = await _basketClient.CompleteBasketCheckoutAsync(checkout.BasketId, checkout.CheckoutId);
+
+        if (!result.IsSuccess)
+        {
+            // Ordren er allerede bekræftet; oprydningen kan forsøges igen senere
+            return false;
+        }
+
+        // 2. Checkouten er færdig
+        checkout.MoveTo(CheckoutState.Completed);
+        await _repository.UpdateAsync(checkout);
         return true;
     }
 }

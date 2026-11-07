@@ -18,4 +18,12 @@ public class FakeBasketClient : IBasketClient
            }
        });
     }
+    public Task<CompleteBasketCheckoutResult> CompleteBasketCheckoutAsync(int basketId, Guid checkoutId)
+    {
+        return Task.FromResult(new CompleteBasketCheckoutResult
+        {
+            IsSuccess = true,
+            Reason = string.Empty
+        });
+    }
 }

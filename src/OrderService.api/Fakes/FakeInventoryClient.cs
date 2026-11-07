@@ -5,9 +5,18 @@ namespace OrderService.api.Fakes;
 
 public class FakeInventoryClient : IInventoryClient
 {
-    public Task<ReserveStockResult> ReserveStock(Guid checkoutId, List<StockLineDto> itemsToReserve)
+    public Task<ReserveStockResult> ReserveStock(Guid checkoutId, int orderId, List<StockLineDto> itemsToReserve)
     {
         return Task.FromResult(new ReserveStockResult
+        {
+            IsSuccess = true,
+            Reason = string.Empty
+        });
+    }
+
+    public Task<ConfirmStockReservationResult> ConfirmStockReservation(Guid checkoutId)
+    {
+        return Task.FromResult(new ConfirmStockReservationResult
         {
             IsSuccess = true,
             Reason = string.Empty
