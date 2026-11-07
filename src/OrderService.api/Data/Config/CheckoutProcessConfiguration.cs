@@ -15,6 +15,9 @@ public class CheckoutProcessConfiguration : IEntityTypeConfiguration<CheckoutPro
             .IsRequired()
             .HasMaxLength(256);
 
+        builder.Property(b => b.FailureReason)
+            .HasMaxLength(500);
+
         builder.HasIndex(o => o.CheckoutId).IsUnique();
 
         builder.OwnsOne(o => o.ShipToAddress, a =>

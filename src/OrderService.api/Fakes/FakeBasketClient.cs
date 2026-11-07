@@ -26,4 +26,13 @@ public class FakeBasketClient : IBasketClient
             Reason = string.Empty
         });
     }
+
+    public Task<ReleaseBasketCheckoutResult> ReleaseBasketCheckoutAsync(int basketId, Guid checkoutId)
+    {
+        return Task.FromResult(new ReleaseBasketCheckoutResult
+        {
+            IsSuccess = true,
+            Reason = string.Empty
+        });
+    }
 }

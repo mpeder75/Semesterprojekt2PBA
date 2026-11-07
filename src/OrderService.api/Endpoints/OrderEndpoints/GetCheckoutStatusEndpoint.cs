@@ -25,7 +25,8 @@ public class GetCheckoutStatusEndpoint : IEndpoint<IResult, Guid, IRepository<Ch
         {
             CheckoutId = checkout.CheckoutId,
             State = checkout.State.ToString(),
-            CreatedAt = checkout.CreatedAt
+            CreatedAt = checkout.CreatedAt,
+            FailureReason = checkout.FailureReason
         };
 
         return Results.Ok(response);

@@ -7,6 +7,7 @@ public class CheckoutStatusResponse : BaseResponse, IAggregateRoot
     public Guid CheckoutId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public string State { get; set; } = string.Empty;
+    public string? FailureReason { get; set; }
 
     public CheckoutStatusResponse(Guid correlationId) : base(correlationId)
     {

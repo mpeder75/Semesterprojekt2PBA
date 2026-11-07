@@ -22,4 +22,13 @@ public class FakeInventoryClient : IInventoryClient
             Reason = string.Empty
         });
     }
+
+    public Task<ReleaseStockReservationResult> ReleaseStockReservation(Guid checkoutId)
+    {
+        return Task.FromResult(new ReleaseStockReservationResult
+        {
+            IsSuccess = true,
+            Reason = string.Empty
+        });
+    }
 }

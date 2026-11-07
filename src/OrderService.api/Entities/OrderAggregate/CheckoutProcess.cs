@@ -10,6 +10,7 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
     public string BuyerId { get; private set; }
     public Address ShipToAddress { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.Now;
+    public string? FailureReason { get; private set; }
     private readonly List<CheckoutLine> _lines = new();
     public IReadOnlyCollection<CheckoutLine> Lines => _lines.AsReadOnly();
 
@@ -35,5 +36,11 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
     public void MoveTo(CheckoutState next)
     {
         State = next;
+    }
+
+    public void SetFailure(string reason)
+    {
+        // Kolonnen er begrænset til 500 tegn
+        FailureReason = reason.Length > 500 ? reason[..500] : reason;
     }
 }
