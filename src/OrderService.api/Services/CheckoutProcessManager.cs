@@ -1,10 +1,16 @@
 ﻿using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
+using OrderService.api.Messages;
+using OrderService.api.Messages.Basket;
 using OrderService.api.Messages.Inventory;
 using OrderService.api.Specifications;
 
 namespace OrderService.api.Services;
 
+/// <summary>
+/// Process Manager for checkout. Styrer flowet gennem tilstandene, gemmer fremdriften i databasen
+/// og kalder Basket, Catalog og Inventory (og rydder op, hvis noget fejler).
+/// </summary>
 public class CheckoutProcessManager
 {
     private readonly IBasketClient _basketClient;
@@ -12,20 +18,32 @@ public class CheckoutProcessManager
     private readonly IRepository<CheckoutProcess> _repository;
     private readonly IInventoryClient _inventoryClient;
     private readonly IRepository<Order> _orderRepository;
+    private readonly ICheckoutRequestProducer _producer;
 
+    /// <summary>
+    /// Modtager de afhængigheder, manageren bruger. De leveres af .NET (dependency injection).
+    /// </summary>
     public CheckoutProcessManager(IRepository<CheckoutProcess> repository, IBasketClient basketClient,
-        ICatalogClient catalogClient, IInventoryClient inventoryClient, IRepository<Order> orderRepository)
+        ICatalogClient catalogClient, IInventoryClient inventoryClient, IRepository<Order> orderRepository, ICheckoutRequestProducer producer)
     {
         _repository = repository;
         _basketClient = basketClient;
         _catalogClient = catalogClient;
         _inventoryClient = inventoryClient;
         _orderRepository = orderRepository;
+        _producer = producer;
     }
 
+    /// <summary>
+    /// Finder checkouten og kører den videre, trin for trin, indtil et trin stopper eller flowet er færdigt.
+    /// </summary>
+    /// <remarks>
+    /// Hver tilstand har sin egen handler. En handler returnerer true, når tilstanden er flyttet (så løkken
+    /// fortsætter), og false, når flowet skal stoppe. Normal vej: AwaitingBasket til Completed.
+    /// Fejl-sporet: ReleasingStock og ReleasingBasket. Completed og Failed er slutninger.
+    /// </remarks>
     public async Task AdvanceOrderAsync(Guid checkoutId)
     {
-        // Find rækken
         var checkout = await _repository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(checkoutId));
 
         if (checkout is null)
@@ -37,7 +55,6 @@ public class CheckoutProcessManager
         {
             switch (checkout.State)
             {
-                // ---------- Normal vej ----------
                 case CheckoutState.AwaitingBasket:
                     if (!await HandleAwaitingBasketAsync(checkout))
                     {
@@ -73,7 +90,6 @@ public class CheckoutProcessManager
                     }
                     break;
 
-                // ---------- Fejl-sporet (kompensation) ----------
                 case CheckoutState.ReleasingStock:
                     if (!await HandleReleasingStockAsync(checkout))
                     {
@@ -88,51 +104,102 @@ public class CheckoutProcessManager
                     }
                     break;
 
-                // Completed og Failed er slutninger; flowet er færdigt
                 default:
                     return;
             }
         }
     }
 
+    /// <summary>
+    /// Spørger Basket om kurven, gemmer varelinjerne og flytter til AwaitingCatalog.
+    /// Afviser Basket, går checkouten direkte til Failed (der er intet at frigive).
+    /// </summary>
     private async Task<bool> HandleAwaitingBasketAsync(CheckoutProcess checkout)
     {
-        // Spørg basket
         var result = await _basketClient.PrepareBasketForCheckoutAsync(checkout.BasketId, checkout.BuyerId);
 
         if (!result.IsSuccess)
         {
-            // Basket låste ikke kurven, så der er intet at frigive: direkte til Failed
             return await FailAsync(checkout, $"Basket rejected the checkout: {result.Reason}", CheckoutState.Failed);
         }
 
-        // Gem varelinjerne
         var lines = result.Items.Select(i => new CheckoutLine(i.CatalogItemId, i.Quantity));
         checkout.SetLines(lines);
 
-        // opdater tilstanden
         checkout.MoveTo(CheckoutState.AwaitingCatalog);
 
-        // Gem
         await _repository.UpdateAsync(checkout);
         return true;
     }
 
+    /// <summary>
+    /// Sender "PrepareBasketForCheckout" til Basket og husker, hvilket svar vi venter på.
+    /// </summary>
+    /// <remarks>
+    /// Gemmer først CorrelationId på checkouten og sender derefter. Går noget galt midt imellem,
+    /// har vi et gemt id uden besked, ikke en besked uden id. Kaldes ikke endnu.
+    /// </remarks>
+    private async Task SendPrepareBasketAsync(CheckoutProcess checkout)
+    {
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        await _repository.UpdateAsync(checkout);
+
+        await _producer.SendAsync(
+            CheckoutQueues.Basket,
+            "PrepareBasketForCheckout",
+            checkout.CheckoutId,
+            correlationId,
+            new PrepareBasketForCheckoutPayload { BasketId = checkout.BasketId, BuyerId = checkout.BuyerId });
+    }
+
+    /// <summary>
+    /// Behandler et svar fra en anden service (kaldes af reply-consumeren).
+    /// </summary>
+    /// <remarks>
+    /// Ignorerer svaret, hvis checkouten ikke findes, eller hvis svarets CorrelationId ikke er det, vi venter på
+    /// (gammelt eller dobbelt svar). Derefter vælges handling efter MessageType.
+    /// Mangler endnu: selve behandlingen af BasketPrepared.
+    /// </remarks>
+    public async Task HandleReplyAsync(CheckoutMessageEnvelope envelope)
+    {
+        var checkout = await _repository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(envelope.CheckoutId));
+
+        if (checkout is null)
+        {
+            return;
+        }
+
+        if (checkout.ExpectedCorrelationId != envelope.CorrelationId)
+        {
+            return;
+        }
+
+        switch (envelope.MessageType)
+        {
+            case "BasketPrepared":
+                break;
+
+            default:
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Spørger Catalog om varerne i kurven og gemmer navn, pris og billede på linjerne (snapshot).
+    /// Flytter til AwaitingStockReservation. Fejler Catalog, eller mangler en vare, frigives kurven.
+    /// </summary>
     private async Task<bool> HandleAwaitingCatalogAsync(CheckoutProcess checkout)
     {
-        // Find id gemme linjer
         var ids = checkout.Lines.Select(l => l.CatalogItemId).Distinct().ToList();
 
-        // 2. spørg catalog
         var result = await _catalogClient.GetCatalogItemsByIdsAsync(ids);
 
         if (!result.IsSuccess)
         {
-            // Kurven er låst, men intet lager er reserveret: frigiv kurven
             return await FailAsync(checkout, $"Catalog lookup failed: {result.Reason}", CheckoutState.ReleasingBasket);
         }
 
-        // 3. opdater linjerne med snapshot
         foreach (var line in checkout.Lines)
         {
             var item = result.Items.FirstOrDefault(i => i.CatalogItemId == line.CatalogItemId);
@@ -143,16 +210,22 @@ public class CheckoutProcessManager
             line.SetCatalogSnapshot(item.Name, item.Price, item.PictureUri);
         }
 
-        // 4. opdater tilstanden
         checkout.MoveTo(CheckoutState.AwaitingStockReservation);
 
         await _repository.UpdateAsync(checkout);
         return true;
     }
 
+    /// <summary>
+    /// Opretter en ventende ordre (PendingInventory), reserverer lager hos Inventory og flytter til
+    /// AwaitingStockConfirmation.
+    /// </summary>
+    /// <remarks>
+    /// Ordren oprettes før reservationen, fordi Inventory skal bruge ordrens id. Afvises reservationen,
+    /// afvises ordren, og kun kurven frigives (intet lager er holdt).
+    /// </remarks>
     private async Task<bool> HandleAwaitingStockReservationAsync(CheckoutProcess checkout)
     {
-        // Lav checkout-linjerne om til ordrelinjer (snapshot fra Catalog)
         var items = checkout.Lines
             .Select(l => new OrderItem(
                 new CatalogItemOrdered(l.CatalogItemId, l.ProductName!, l.PictureUri!),
@@ -162,10 +235,8 @@ public class CheckoutProcessManager
 
         var order = new Order(checkout.BuyerId, checkout.ShipToAddress, items, checkout.CheckoutId);
 
-        // Gem den ventende ordre (status PendingInventory), før vi reserverer lager
         await _orderRepository.AddAsync(order);
 
-        // Reservér lager
         var stockLines = checkout.Lines
             .Select(l => new StockLineDto { CatalogItemId = l.CatalogItemId, Quantity = l.Quantity })
             .ToList();
@@ -174,31 +245,32 @@ public class CheckoutProcessManager
 
         if (!result.IsSuccess)
         {
-            // Reservationen er alt-eller-intet, så intet lager er holdt: afvis ordren og frigiv kun kurven
             order.Reject();
             await _orderRepository.UpdateAsync(order);
 
             return await FailAsync(checkout, $"Stock reservation failed: {result.Reason}", CheckoutState.ReleasingBasket);
         }
 
-        // Opdater tilstanden og gem
         checkout.MoveTo(CheckoutState.AwaitingStockConfirmation);
         await _repository.UpdateAsync(checkout);
 
         return true;
     }
 
+    /// <summary>
+    /// Beder Inventory bekræfte reservationen, bekræfter ordren og flytter til OrderConfirmedCleanupPending.
+    /// </summary>
+    /// <remarks>
+    /// Kan Inventory ikke bekræfte, afvises ordren, og lageret frigives først, derefter kurven.
+    /// </remarks>
     private async Task<bool> HandleAwaitingStockConfirmationAsync(CheckoutProcess checkout)
     {
-        // 1. spørg inventory
         var result = await _inventoryClient.ConfirmStockReservation(checkout.CheckoutId);
 
-        // 2. find ordren
         var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
 
         if (!result.IsSuccess)
         {
-            // Lageret er reserveret, men kunne ikke bekræftes: afvis ordren, frigiv lager og derefter kurv
             if (order is not null)
             {
                 order.Reject();
@@ -213,45 +285,46 @@ public class CheckoutProcessManager
             return false;
         }
 
-        // 3. bekræft ordren
         order.Confirm();
-
-        // 4. opdater ordren
         await _orderRepository.UpdateAsync(order);
 
-        // 5. opdater tilstanden
         checkout.MoveTo(CheckoutState.OrderConfirmedCleanupPending);
-
-        // 6. opdater checkout-processen
         await _repository.UpdateAsync(checkout);
 
         return true;
     }
 
+    /// <summary>
+    /// Beder Basket tømme den købte kurv og flytter til Completed.
+    /// </summary>
+    /// <remarks>
+    /// Ordren er allerede bekræftet. Fejler oprydningen, bliver checkouten stående, så den kan forsøges igen
+    /// senere. Lageret frigives aldrig herfra.
+    /// </remarks>
     private async Task<bool> HandleOrderConfirmedCleanupPendingAsync(CheckoutProcess checkout)
     {
-        // 1. Bed Basket om at tømme den købte kurv
         var result = await _basketClient.CompleteBasketCheckoutAsync(checkout.BasketId, checkout.CheckoutId);
 
         if (!result.IsSuccess)
         {
-            // Ordren er allerede bekræftet; oprydningen kan forsøges igen senere
             return false;
         }
 
-        // 2. Checkouten er færdig
         checkout.MoveTo(CheckoutState.Completed);
         await _repository.UpdateAsync(checkout);
         return true;
     }
 
+    /// <summary>
+    /// Fejl-sporet: Beder Inventory frigive lageret og flytter til ReleasingBasket.
+    /// Fejler frigivelsen, bliver checkouten stående i ReleasingStock, så den kan forsøges igen.
+    /// </summary>
     private async Task<bool> HandleReleasingStockAsync(CheckoutProcess checkout)
     {
         var result = await _inventoryClient.ReleaseStockReservation(checkout.CheckoutId);
 
         if (!result.IsSuccess)
         {
-            // Lageret er stadig holdt. Bliv i ReleasingStock, så det kan forsøges igen
             return false;
         }
 
@@ -260,13 +333,16 @@ public class CheckoutProcessManager
         return true;
     }
 
+    /// <summary>
+    /// Fejl-sporet: Beder Basket frigive kurven (indholdet bevares) og flytter til Failed.
+    /// Fejler frigivelsen, bliver checkouten stående i ReleasingBasket, så den kan forsøges igen.
+    /// </summary>
     private async Task<bool> HandleReleasingBasketAsync(CheckoutProcess checkout)
     {
         var result = await _basketClient.ReleaseBasketCheckoutAsync(checkout.BasketId, checkout.CheckoutId);
 
         if (!result.IsSuccess)
         {
-            // Kurven er stadig låst. Bliv i ReleasingBasket, så det kan forsøges igen
             return false;
         }
 
@@ -275,8 +351,12 @@ public class CheckoutProcessManager
         return true;
     }
 
-    // Sender checkouten ind i fejl-sporet: gemmer årsagen og flytter til den første oprydningstilstand.
-    // Returnerer true, så løkken i AdvanceOrderAsync fortsætter med oprydningen med det samme.
+    /// <summary>
+    /// Sender checkouten ind i fejl-sporet: gemmer årsagen og flytter til den første oprydningstilstand.
+    /// </summary>
+    /// <remarks>
+    /// Returnerer true, så løkken i AdvanceOrderAsync fortsætter med oprydningen med det samme.
+    /// </remarks>
     private async Task<bool> FailAsync(CheckoutProcess checkout, string reason, CheckoutState nextState)
     {
         checkout.SetFailure(reason);

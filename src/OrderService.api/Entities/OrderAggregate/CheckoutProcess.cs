@@ -14,6 +14,8 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
     private readonly List<CheckoutLine> _lines = new();
     public IReadOnlyCollection<CheckoutLine> Lines => _lines.AsReadOnly();
 
+    public Guid? ExpectedCorrelationId { get; private set; }
+
     // Ef constructor
 #pragma warning disable CS8618
     private CheckoutProcess() { }
@@ -36,6 +38,11 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
     public void MoveTo(CheckoutState next)
     {
         State = next;
+    }
+
+    public void ExpectReply(Guid correlationId)
+    {
+        ExpectedCorrelationId = correlationId;
     }
 
     public void SetFailure(string reason)

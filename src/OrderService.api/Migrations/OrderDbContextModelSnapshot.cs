@@ -77,6 +77,9 @@ namespace OrderService.api.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("ExpectedCorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("FailureReason")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
