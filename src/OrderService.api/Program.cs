@@ -4,6 +4,7 @@ using OrderService.api.Consumers;
 using OrderService.api.Data;
 using OrderService.api.Fakes;
 using OrderService.api.Interfaces;
+using OrderService.api.Producers;
 using OrderService.api.Services;
 using RabbitMQ.Client;
 
@@ -40,6 +41,10 @@ builder.Services.AddSingleton<IConnection>(_ =>
 
 // Consumers
 builder.Services.AddHostedService<CreateOrderConsumer>();
+builder.Services.AddHostedService<OrderCheckoutReplyConsumer>();
+
+// Producers
+builder.Services.AddSingleton<ICheckoutRequestProducer, CheckoutRequestProducer>();
 
 // Services
 builder.Services.AddScoped<CheckoutProcessManager>();
