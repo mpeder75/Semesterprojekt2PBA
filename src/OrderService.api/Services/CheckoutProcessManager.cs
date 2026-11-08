@@ -119,8 +119,11 @@ public class CheckoutProcessManager
     /// <remarks>
     /// Ignorerer svaret, hvis checkouten ikke findes, eller hvis svarets CorrelationId ikke er det, vi venter på
     /// (gammelt eller dobbelt svar). Derefter vælges handling efter MessageType:
-    /// BasketPrepared, CatalogItemsReturned, StockReserved, StockReservationRejected, StockReservationConfirmed,
-    /// StockConfirmationRejected, BasketCheckoutCompleted, StockReservationReleased og BasketCheckoutReleased.
+    /// BasketPrepared, BasketPreparationRejected, CatalogItemsReturned, CatalogLookupRejected, StockReserved,
+    /// StockReservationRejected, StockReservationConfirmed, StockConfirmationRejected, BasketCheckoutCompleted,
+    /// StockReservationReleased og BasketCheckoutReleased.
+    /// Afviser Basket forberedelsen (BasketPreparationRejected), går checkouten direkte til Failed, for intet er låst.
+    /// Afviser Catalog opslaget (CatalogLookupRejected), frigives kurven (ReleasingBasket), for den er allerede låst.
     /// Ukendte svar ignoreres. En afvisning af oprydningen (Complete/Release) ignoreres også, så checkouten bliver
     /// stående i sin tilstand og kan forsøges igen ved at køre AdvanceOrderAsync.
     /// </remarks>
@@ -258,7 +261,6 @@ public class CheckoutProcessManager
                     await _orderRepository.UpdateAsync(rejectedConfirmOrder);
                 }
 
-                // Lageret er reserveret, men kunne ikke bekræftes: frigiv lageret først, derefter kurven
                 await FailAsync(checkout, $"Stock confirmation failed: {stockConfirmationRejected.Reason}", CheckoutState.ReleasingStock);
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
@@ -299,6 +301,30 @@ public class CheckoutProcessManager
                 checkout.MoveTo(CheckoutState.Failed);
                 await _repository.UpdateAsync(checkout);
                 break;
+
+            case "BasketPreparationRejected":
+                var basketRejected = envelope.Payload.Deserialize<BasketPreparationRejectedPayload>(JsonOptions);
+
+                if (basketRejected is null)
+                {
+                    return;
+                }
+
+                await FailAsync(checkout, $"Basket rejected the checkout: {basketRejected.Reason}", CheckoutState.Failed);
+                break;
+
+            case "CatalogLookupRejected":
+                var catalogRejected = envelope.Payload.Deserialize<CatalogLookupRejectedPayload>(JsonOptions);
+
+                if (catalogRejected is null)
+                {
+                    return;
+                }
+
+                await FailAsync(checkout, $"Catalog rejected the lookup: {catalogRejected.Reason}", CheckoutState.ReleasingBasket);
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
 
             default:
                 return;

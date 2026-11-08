@@ -337,6 +337,49 @@ public class CheckoutProcessManagerTests
         Assert.Equal(CheckoutState.Failed, checkout.State);
     }
 
+    [Fact]
+    public async Task CatalogReply_LookupRejected_FailsAndReleasesTheBasket()
+    {
+        var checkout = CheckoutAfterBasketReply();
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        CheckoutIs(checkout);
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(
+            checkout, correlationId, "CatalogLookupRejected", new CatalogLookupRejectedPayload { Reason = "Catalog unavailable" }));
+
+        // Kurven er låst, så den skal frigives
+        Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
+        Assert.Contains("Catalog unavailable", checkout.FailureReason);
+        var sent = Assert.Single(SentMessages());
+        Assert.Equal(CheckoutQueues.Basket, sent.Queue);
+        Assert.Equal("ReleaseBasketCheckout", sent.MessageType);
+        await _orderRepo.DidNotReceiveWithAnyArgs().AddAsync(default!);
+
+        await ReplyAsync(checkout, "BasketCheckoutReleased", new BasketCheckoutReleasedPayload());
+        Assert.Equal(CheckoutState.Failed, checkout.State);
+    }
+
+    // ---------- Basket: afvisning ----------
+
+    [Fact]
+    public async Task BasketReply_PreparationRejected_FailsWithoutReleasing()
+    {
+        var checkout = FreshCheckout();
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        CheckoutIs(checkout);
+
+        await _manager.HandleReplyAsync(ReplyEnvelope(
+            checkout, correlationId, "BasketPreparationRejected", new BasketPreparationRejectedPayload { Reason = "Basket is empty" }));
+
+        // Intet er låst, så der er intet at frigive: direkte til Failed og ingen nye requests
+        Assert.Equal(CheckoutState.Failed, checkout.State);
+        Assert.Contains("Basket is empty", checkout.FailureReason);
+        Assert.Empty(SentMessages());
+        await _orderRepo.DidNotReceiveWithAnyArgs().AddAsync(default!);
+    }
+
     // ---------- Inventory: reservation ----------
 
     [Fact]

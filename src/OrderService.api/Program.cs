@@ -47,9 +47,9 @@ builder.Services.AddSingleton<ICheckoutRequestProducer, CheckoutRequestProducer>
 
 // Services
 builder.Services.AddScoped<CheckoutProcessManager>();
-
 builder.Services.AddEndpoints();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks().AddDbContextCheck<OrderDbContext>();
 
 var app = builder.Build();
 
