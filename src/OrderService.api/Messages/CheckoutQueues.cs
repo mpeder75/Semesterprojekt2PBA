@@ -12,4 +12,8 @@ public static class CheckoutQueues
 
     // Replies fra de andre services tilbage til Order
     public const string Replies = "order.checkout.replies";
+
+    // Dead-letter: svar, OrderService ikke kunne behandle, havner her i stedet for at forsvinde
+    public const string DeadLetterExchange = "eshop.checkout.dead";
+    public const string RepliesDead = "order.checkout.replies.dead";
 }

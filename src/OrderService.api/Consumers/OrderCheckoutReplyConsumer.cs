@@ -27,12 +27,42 @@ public class OrderCheckoutReplyConsumer : BackgroundService
     {
         await using var channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
+        // Dead-letter: en besked, der nackes uden requeue, flyttes af RabbitMQ til den døde kø i stedet for at forsvinde
+        await channel.ExchangeDeclareAsync(
+            exchange: CheckoutQueues.DeadLetterExchange,
+            type: ExchangeType.Direct,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: stoppingToken);
+
+        await channel.QueueDeclareAsync(
+            queue: CheckoutQueues.RepliesDead,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: stoppingToken);
+
+        await channel.QueueBindAsync(
+            queue: CheckoutQueues.RepliesDead,
+            exchange: CheckoutQueues.DeadLetterExchange,
+            routingKey: QueueName,
+            arguments: null,
+            cancellationToken: stoppingToken);
+
+        var queueArguments = new Dictionary<string, object?>
+        {
+            ["x-dead-letter-exchange"] = CheckoutQueues.DeadLetterExchange,
+            ["x-dead-letter-routing-key"] = QueueName
+        };
+
         await channel.QueueDeclareAsync(
             queue: QueueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
-            arguments: null,
+            arguments: queueArguments,
             cancellationToken: stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(channel);
