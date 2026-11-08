@@ -5,6 +5,7 @@ using OrderService.api.Data;
 using OrderService.api.Interfaces;
 using OrderService.api.Producers;
 using OrderService.api.Services;
+using OrderService.api.Workers;
 using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -39,6 +40,9 @@ builder.Services.AddSingleton<IConnection>(_ =>
 
 // Consumers
 builder.Services.AddHostedService<OrderCheckoutReplyConsumer>();
+
+// Workers
+builder.Services.AddHostedService<CheckoutDeadlineWorker>();
 
 // Producers
 builder.Services.AddSingleton<ICheckoutRequestProducer, CheckoutRequestProducer>();

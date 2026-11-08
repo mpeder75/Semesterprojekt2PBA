@@ -515,6 +515,100 @@ public class CheckoutProcessManagerTests
         Assert.Equal(CheckoutState.OrderConfirmedCleanupPending, checkout.State);
     }
 
+    // ---------- deadline: annullering ----------
+
+    [Theory]
+    [InlineData(CheckoutState.AwaitingBasket)]
+    [InlineData(CheckoutState.AwaitingCatalog)]
+    public async Task Cancel_BeforeAnyStockIsReserved_ReleasesOnlyTheBasket(CheckoutState state)
+    {
+        var checkout = FreshCheckout();
+        checkout.MoveTo(state);
+        CheckoutIs(checkout);
+
+        await _manager.CancelAsync(checkout.CheckoutId);
+
+        Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
+        Assert.Equal("Checkout timed out", checkout.FailureReason);
+        var sent = Assert.Single(SentMessages());
+        Assert.Equal(CheckoutQueues.Basket, sent.Queue);
+        Assert.Equal("ReleaseBasketCheckout", sent.MessageType);
+        await _orderRepo.DidNotReceiveWithAnyArgs().AddAsync(default!);
+
+        await ReplyAsync(checkout, "BasketCheckoutReleased", new BasketCheckoutReleasedPayload());
+        Assert.Equal(CheckoutState.Failed, checkout.State);
+    }
+
+    [Fact]
+    public async Task Cancel_WhileWaitingForInventory_RejectsOrderAndReleasesStockThenBasket()
+    {
+        var checkout = await CheckoutWaitingForReservationReply();
+
+        await _manager.CancelAsync(checkout.CheckoutId);
+
+        // Reservationen kan være nået frem, selv om svaret udeblev, så lageret frigives først
+        Assert.Equal(CheckoutState.ReleasingStock, checkout.State);
+        Assert.Equal(OrderStatus.Rejected, _savedOrder!.Status);
+        var sent = SentMessages().Last();
+        Assert.Equal(CheckoutQueues.Inventory, sent.Queue);
+        Assert.Equal("ReleaseStockReservation", sent.MessageType);
+
+        await ReplyAsync(checkout, "StockReservationReleased", new StockReservationReleasedPayload());
+        Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
+
+        await ReplyAsync(checkout, "BasketCheckoutReleased", new BasketCheckoutReleasedPayload());
+        Assert.Equal(CheckoutState.Failed, checkout.State);
+        Assert.Equal(
+            new[] { "ReserveStock", "ReleaseStockReservation", "ReleaseBasketCheckout" },
+            SentTypes());
+    }
+
+    [Fact]
+    public async Task Cancel_LateReplyFromBeforeTheCancellation_IsIgnored()
+    {
+        var checkout = await CheckoutWaitingForConfirmationReply();
+        var oldCorrelationId = checkout.ExpectedCorrelationId!.Value;
+
+        await _manager.CancelAsync(checkout.CheckoutId);
+        var sentBefore = SentMessages().Count;
+
+        // Inventory svarer for sent på den gamle ConfirmStockReservation
+        await _manager.HandleReplyAsync(ReplyEnvelope(
+            checkout, oldCorrelationId, "StockReservationConfirmed", new StockReservationConfirmedPayload()));
+
+        Assert.Equal(CheckoutState.ReleasingStock, checkout.State);
+        Assert.Equal(OrderStatus.Rejected, _savedOrder!.Status);
+        Assert.Equal(sentBefore, SentMessages().Count);
+    }
+
+    [Theory]
+    [InlineData(CheckoutState.OrderConfirmedCleanupPending)]
+    [InlineData(CheckoutState.Completed)]
+    [InlineData(CheckoutState.ReleasingBasket)]
+    [InlineData(CheckoutState.Failed)]
+    public async Task Cancel_AfterConfirmationOrWhenAlreadyCleaningUp_DoesNothing(CheckoutState state)
+    {
+        var checkout = FreshCheckout();
+        checkout.MoveTo(state);
+        CheckoutIs(checkout);
+
+        await _manager.CancelAsync(checkout.CheckoutId);
+
+        Assert.Equal(state, checkout.State);
+        Assert.Empty(SentMessages());
+        Assert.Null(checkout.FailureReason);
+    }
+
+    [Fact]
+    public async Task Cancel_UnknownCheckout_DoesNothing()
+    {
+        CheckoutIs(null);
+
+        await _manager.CancelAsync(Guid.NewGuid());
+
+        Assert.Empty(SentMessages());
+    }
+
     // ---------- fejl-sporet: afvist bekræftelse ----------
 
     [Fact]

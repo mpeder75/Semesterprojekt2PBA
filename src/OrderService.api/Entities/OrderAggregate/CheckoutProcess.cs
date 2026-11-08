@@ -16,17 +16,27 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
 
     public Guid? ExpectedCorrelationId { get; private set; }
 
+    /// <summary>Hvor længe en checkout må vare, før den annulleres (før ordren er bekræftet).</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Tidspunktet, hvor checkouten annulleres, hvis den ikke er bekræftet. Tom for ældre checkouts, der blev
+    /// oprettet før deadline fandtes (de annulleres ikke).
+    /// </summary>
+    public DateTimeOffset? DeadlineAt { get; private set; }
+
     // Ef constructor
 #pragma warning disable CS8618
     private CheckoutProcess() { }
 
-    public CheckoutProcess(Guid checkoutId, int basketId, string buyerId, Address shipToAddress)
+    public CheckoutProcess(Guid checkoutId, int basketId, string buyerId, Address shipToAddress, TimeSpan? timeout = null)
     {
         CheckoutId = checkoutId;
         State = CheckoutState.AwaitingBasket;
         BasketId = basketId;
         BuyerId = buyerId;
         ShipToAddress = shipToAddress;
+        DeadlineAt = CreatedAt.Add(timeout ?? DefaultTimeout);
     }
 
     /// <summary>

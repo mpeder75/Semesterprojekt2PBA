@@ -114,6 +114,45 @@ public class CheckoutProcessManager
     }
 
     /// <summary>
+    /// Annullerer en checkout, der ikke nåede at blive bekræftet i tide (kaldes af deadline-workeren).
+    /// </summary>
+    /// <remarks>
+    /// Kun de fire ventetilstande før bekræftelsen annulleres. Er ordren oprettet, afvises den, og lageret frigives
+    /// først (reservationen kan være nået frem, selv om svaret udeblev), derefter kurven. Ellers frigives kun kurven.
+    /// Frigivelsen skifter det forventede CorrelationId, så et sent svar fra før annulleringen ignoreres.
+    /// </remarks>
+    public async Task CancelAsync(Guid checkoutId)
+    {
+        var checkout = await _repository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(checkoutId));
+
+        if (checkout is null)
+        {
+            return;
+        }
+
+        if (checkout.State is not (CheckoutState.AwaitingBasket
+            or CheckoutState.AwaitingCatalog
+            or CheckoutState.AwaitingStockReservation
+            or CheckoutState.AwaitingStockConfirmation))
+        {
+            return;
+        }
+
+        var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkoutId));
+
+        if (order is not null)
+        {
+            order.Reject();
+            await _orderRepository.UpdateAsync(order);
+        }
+
+        var nextState = order is null ? CheckoutState.ReleasingBasket : CheckoutState.ReleasingStock;
+
+        await FailAsync(checkout, "Checkout timed out", nextState);
+        await AdvanceOrderAsync(checkoutId);
+    }
+
+    /// <summary>
     /// Behandler et svar fra en anden service (kaldes af reply-consumeren).
     /// </summary>
     /// <remarks>
