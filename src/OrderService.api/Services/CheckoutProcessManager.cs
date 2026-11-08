@@ -3,6 +3,7 @@ using OrderService.api.Entities.OrderAggregate;
 using OrderService.api.Interfaces;
 using OrderService.api.Messages;
 using OrderService.api.Messages.Basket;
+using OrderService.api.Messages.Catalog;
 using OrderService.api.Messages.Inventory;
 using OrderService.api.Specifications;
 
@@ -165,14 +166,14 @@ public class CheckoutProcessManager
         switch (envelope.MessageType)
         {
             case "BasketPrepared":
-                var payload = envelope.Payload.Deserialize<BasketPreparedPayload>(JsonOptions);
+                var payloadBasket = envelope.Payload.Deserialize<BasketPreparedPayload>(JsonOptions);
 
-                if (payload is null)
+                if (payloadBasket is null)
                 {
                     return;
                 }
 
-                var checkOutLines = payload.Items.Select(i => new CheckoutLine(i.CatalogItemId, i.Quantity));
+                var checkOutLines = payloadBasket.Items.Select(i => new CheckoutLine(i.CatalogItemId, i.Quantity));
                 checkout.SetLines(checkOutLines);
                 checkout.MoveTo(CheckoutState.AwaitingCatalog);
 
@@ -180,6 +181,114 @@ public class CheckoutProcessManager
 
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
+
+            case "CatalogItemsReturned":
+                var payloadCatalog = envelope.Payload.Deserialize<CatalogItemsReturnedPayload>(JsonOptions);
+
+                if (payloadCatalog is null)
+                {
+                    return;
+                }
+
+                foreach (var line in checkout.Lines)
+                {
+                    var item = payloadCatalog.Items.FirstOrDefault(i => i.CatalogItemId == line.CatalogItemId);
+
+                    if (item is null)
+                    {
+                        await FailAsync(checkout, $"Catalog does not know item {line.CatalogItemId}.", CheckoutState.ReleasingBasket);
+                        await AdvanceOrderAsync(checkout.CheckoutId);
+                        return;
+                    }
+
+                    line.SetCatalogSnapshot(item.Name, item.Price, item.PictureUri);
+                }
+
+                checkout.MoveTo(CheckoutState.AwaitingStockReservation);
+                await _repository.UpdateAsync(checkout);
+
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
+            case "StockReserved":
+                var stockReserved = envelope.Payload.Deserialize<StockReservedPayload>(JsonOptions);
+
+                if (stockReserved is null)
+                {
+                    return;
+                }
+
+                checkout.MoveTo(CheckoutState.AwaitingStockConfirmation);
+                
+                await _repository.UpdateAsync(checkout);
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
+            case "StockReservationConfirmed":
+                var stockReservationConfirmed = envelope.Payload.Deserialize<StockReservationConfirmedPayload>(JsonOptions);
+                
+                if (stockReservationConfirmed is null)
+                {
+                    return;
+                }
+
+                var confirmedOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
+
+                if (confirmedOrder is null)
+                {
+                    return;
+                }
+
+                confirmedOrder.Confirm();
+                await _orderRepository.UpdateAsync(confirmedOrder);
+
+                checkout.MoveTo(CheckoutState.OrderConfirmedCleanupPending);
+                await _repository.UpdateAsync(checkout);
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
+
+            case "StockReservationRejected":
+                var stockReservationRejected = envelope.Payload.Deserialize<StockReservationRejectedPayload>(JsonOptions);
+
+                if (stockReservationRejected is null)
+                {
+                    return;
+                }
+
+                var rejectedOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
+
+                if (rejectedOrder is not null)
+                {
+                    rejectedOrder.Reject();
+                    await _orderRepository.UpdateAsync(rejectedOrder);
+                }
+
+                await FailAsync(checkout, $"Stock reservation failed: {stockReservationRejected.Reason}", CheckoutState.ReleasingBasket);
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
+            case "StockConfirmationRejected":
+                var stockConfirmationRejected = envelope.Payload.Deserialize<StockConfirmationRejectedPayload>(JsonOptions);
+
+                if (stockConfirmationRejected is null)
+                {
+                    return;
+                }
+
+                var rejectedConfirmOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
+
+                if (rejectedConfirmOrder is not null)
+                {
+                    rejectedConfirmOrder.Reject();
+                    await _orderRepository.UpdateAsync(rejectedConfirmOrder);
+                }
+
+                // Lageret er reserveret, men kunne ikke bekræftes: frigiv lageret først, derefter kurven
+                await FailAsync(checkout, $"Stock confirmation failed: {stockConfirmationRejected.Reason}", CheckoutState.ReleasingStock);
+                await AdvanceOrderAsync(checkout.CheckoutId);
+                break;
+
 
             default:
                 return;
@@ -192,29 +301,25 @@ public class CheckoutProcessManager
     /// </summary>
     private async Task<bool> HandleAwaitingCatalogAsync(CheckoutProcess checkout)
     {
+        await SendGetCatalogItemsAsync(checkout);
+        return false;
+    }
+
+    private async Task SendGetCatalogItemsAsync(CheckoutProcess checkout)
+    {
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+
         var ids = checkout.Lines.Select(l => l.CatalogItemId).Distinct().ToList();
 
-        var result = await _catalogClient.GetCatalogItemsByIdsAsync(ids);
-
-        if (!result.IsSuccess)
-        {
-            return await FailAsync(checkout, $"Catalog lookup failed: {result.Reason}", CheckoutState.ReleasingBasket);
-        }
-
-        foreach (var line in checkout.Lines)
-        {
-            var item = result.Items.FirstOrDefault(i => i.CatalogItemId == line.CatalogItemId);
-            if (item is null)
-            {
-                return await FailAsync(checkout, $"Catalog does not know item {line.CatalogItemId}.", CheckoutState.ReleasingBasket);
-            }
-            line.SetCatalogSnapshot(item.Name, item.Price, item.PictureUri);
-        }
-
-        checkout.MoveTo(CheckoutState.AwaitingStockReservation);
-
         await _repository.UpdateAsync(checkout);
-        return true;
+
+        await _producer.SendAsync(
+            CheckoutQueues.Catalog,
+            "GetCatalogItemsByIds",
+            checkout.CheckoutId,
+            correlationId,
+            new GetCatalogItemsByIdsPayload { CatalogItemIds = ids });
     }
 
     /// <summary>
@@ -242,20 +347,9 @@ public class CheckoutProcessManager
             .Select(l => new StockLineDto { CatalogItemId = l.CatalogItemId, Quantity = l.Quantity })
             .ToList();
 
-        var result = await _inventoryClient.ReserveStock(checkout.CheckoutId, order.Id, stockLines);
 
-        if (!result.IsSuccess)
-        {
-            order.Reject();
-            await _orderRepository.UpdateAsync(order);
-
-            return await FailAsync(checkout, $"Stock reservation failed: {result.Reason}", CheckoutState.ReleasingBasket);
-        }
-
-        checkout.MoveTo(CheckoutState.AwaitingStockConfirmation);
-        await _repository.UpdateAsync(checkout);
-
-        return true;
+        await SendReserveStockAsync(checkout, order.Id, stockLines);
+        return false;
     }
 
     /// <summary>
@@ -266,34 +360,36 @@ public class CheckoutProcessManager
     /// </remarks>
     private async Task<bool> HandleAwaitingStockConfirmationAsync(CheckoutProcess checkout)
     {
-        var result = await _inventoryClient.ConfirmStockReservation(checkout.CheckoutId);
-
         var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
-
-        if (!result.IsSuccess)
-        {
-            if (order is not null)
-            {
-                order.Reject();
-                await _orderRepository.UpdateAsync(order);
-            }
-
-            return await FailAsync(checkout, $"Stock confirmation failed: {result.Reason}", CheckoutState.ReleasingStock);
-        }
-
+        
         if (order is null)
         {
             return false;
         }
 
-        order.Confirm();
-        await _orderRepository.UpdateAsync(order);
+        await SendConfirmStockAsync(checkout, order.Id);
+        
+        return false;
+    }
 
-        checkout.MoveTo(CheckoutState.OrderConfirmedCleanupPending);
+
+    private async Task SendReserveStockAsync(CheckoutProcess checkout, int orderId, List<StockLineDto> stockLines)
+    {
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+
         await _repository.UpdateAsync(checkout);
 
-        return true;
+        await _producer.SendAsync(
+            CheckoutQueues.Inventory,
+            "ReserveStock",
+            checkout.CheckoutId,
+            correlationId,
+            new ReserveStockPayload { OrderId = orderId, Items = stockLines });
     }
+
+
+
 
     /// <summary>
     /// Beder Basket tømme den købte kurv og flytter til Completed.
@@ -351,6 +447,24 @@ public class CheckoutProcessManager
         await _repository.UpdateAsync(checkout);
         return true;
     }
+
+
+    private async Task SendConfirmStockAsync(CheckoutProcess checkout, int orderId)
+    {
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+
+        await _repository.UpdateAsync(checkout);
+
+        await _producer.SendAsync(
+            CheckoutQueues.Inventory,
+            "ConfirmStockReservation",
+            checkout.CheckoutId,
+            correlationId,
+            new ConfirmStockReservationPayload { OrderId = orderId });
+    }
+
+
 
     /// <summary>
     /// Sender checkouten ind i fejl-sporet: gemmer årsagen og flytter til den første oprydningstilstand.
