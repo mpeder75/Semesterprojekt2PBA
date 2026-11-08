@@ -45,4 +45,18 @@ public class OrderGetByIdEndpointTests
         Assert.Equal(builder.TestProductName, item.ProductName);
         Assert.Equal(builder.TestUnits, item.Units);
     }
+
+    [Fact]
+    public async Task RejectedOrder_ShowsRejectedStatus()
+    {
+        var order = new OrderBuilder().WithDefaultValues().WithId(6);
+        order.Reject();
+        _repository.FirstOrDefaultAsync(Arg.Any<ISpecification<Order>>(), Arg.Any<CancellationToken>())
+            .Returns(order);
+
+        var result = await _endpoint.HandleAsync(new GetByIdOrderRequest(6), _repository);
+
+        var ok = Assert.IsType<Ok<GetByIdOrderResponse>>(result);
+        Assert.Equal("Rejected", ok.Value!.Order.Status);
+    }
 }

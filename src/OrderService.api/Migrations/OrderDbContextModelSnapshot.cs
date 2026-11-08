@@ -17,10 +17,86 @@ namespace OrderService.api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.2")
+                .HasAnnotation("ProductVersion", "8.0.33")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CatalogItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CheckoutProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PictureUri")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProductName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutProcessId");
+
+                    b.ToTable("CheckoutLine");
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BasketId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BuyerId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("CheckoutId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DeadlineAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ExpectedCorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutId")
+                        .IsUnique();
+
+                    b.ToTable("CheckoutProcesses");
+                });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>
                 {
@@ -35,10 +111,20 @@ namespace OrderService.api.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid?>("CheckoutId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("OrderDate")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("CheckoutId")
+                        .IsUnique()
+                        .HasFilter("[CheckoutId] IS NOT NULL");
 
                     b.ToTable("Orders");
                 });
@@ -65,6 +151,57 @@ namespace OrderService.api.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("OrderItems");
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutLine", b =>
+                {
+                    b.HasOne("OrderService.api.Entities.OrderAggregate.CheckoutProcess", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("CheckoutProcessId");
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.OwnsOne("OrderService.api.Entities.OrderAggregate.Address", "ShipToAddress", b1 =>
+                        {
+                            b1.Property<int>("CheckoutProcessId")
+                                .HasColumnType("int");
+
+                            b1.Property<string>("City")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("nvarchar(100)");
+
+                            b1.Property<string>("Country")
+                                .IsRequired()
+                                .HasMaxLength(90)
+                                .HasColumnType("nvarchar(90)");
+
+                            b1.Property<string>("State")
+                                .IsRequired()
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)");
+
+                            b1.Property<string>("Street")
+                                .IsRequired()
+                                .HasMaxLength(180)
+                                .HasColumnType("nvarchar(180)");
+
+                            b1.Property<string>("ZipCode")
+                                .IsRequired()
+                                .HasMaxLength(18)
+                                .HasColumnType("nvarchar(18)");
+
+                            b1.HasKey("CheckoutProcessId");
+
+                            b1.ToTable("CheckoutProcesses");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CheckoutProcessId");
+                        });
+
+                    b.Navigation("ShipToAddress")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>
@@ -144,6 +281,11 @@ namespace OrderService.api.Migrations
 
                     b.Navigation("ItemOrdered")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.CheckoutProcess", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("OrderService.api.Entities.OrderAggregate.Order", b =>

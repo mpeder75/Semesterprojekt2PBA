@@ -45,4 +45,20 @@ public class OrderListByBuyerEndpointTests
         Assert.Equal(new[] { 1, 2 }, ok.Value.Orders.Select(o => o.Id));
         Assert.All(ok.Value.Orders, o => Assert.Equal(builder.TestUnitPrice * builder.TestUnits, o.Total));
     }
+
+    [Fact]
+    public async Task Orders_ShowTheirStatus()
+    {
+        var builder = new OrderBuilder();
+        var confirmed = builder.WithDefaultValues().WithId(1);
+        var rejected = builder.WithDefaultValues().WithId(2);
+        rejected.Reject();
+        _repository.ListAsync(Arg.Any<ISpecification<Order>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Order> { confirmed, rejected });
+
+        var result = await _endpoint.HandleAsync(new ListOrdersByBuyerRequest(builder.TestBuyerId), _repository);
+
+        var ok = Assert.IsType<Ok<ListOrdersByBuyerResponse>>(result);
+        Assert.Equal(new[] { "Confirmed", "Rejected" }, ok.Value!.Orders.Select(o => o.Status));
+    }
 }
