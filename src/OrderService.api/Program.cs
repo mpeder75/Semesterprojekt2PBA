@@ -2,7 +2,6 @@
 using MinimalApi.Endpoint.Extensions;
 using OrderService.api.Consumers;
 using OrderService.api.Data;
-using OrderService.api.Fakes;
 using OrderService.api.Interfaces;
 using OrderService.api.Producers;
 using OrderService.api.Services;
@@ -48,11 +47,6 @@ builder.Services.AddSingleton<ICheckoutRequestProducer, CheckoutRequestProducer>
 
 // Services
 builder.Services.AddScoped<CheckoutProcessManager>();
-
-// Fakes
-builder.Services.AddScoped<IBasketClient, FakeBasketClient>();
-builder.Services.AddScoped<ICatalogClient, FakeCatalogClient>();
-builder.Services.AddScoped<IInventoryClient, FakeInventoryClient>();
 
 builder.Services.AddEndpoints();
 builder.Services.AddSwaggerGen();
