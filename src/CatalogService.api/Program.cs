@@ -12,20 +12,18 @@ using CatalogService.api.Messaging.Replies;
 using CatalogService.api.Messaging.Handlers;
 using CatalogService.api.Messaging.Handlers.Adapters;
 using CatalogService.api.Messaging.Dispatcher;
-using CatalogService.api.Messaging.Deserializers;
 using CatalogService.api.Messaging.Deserialization.Resolvers;
 using CatalogService.api.Messaging.Serialization;
 using CatalogService.api.Messaging.Consumers;
 using CatalogService.api.Messaging.Producers;
 using CatalogService.api.Logging;
+using CatalogService.api.Messaging.Deserialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpoints();
 
 builder.Services.AddControllers();
-builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
-builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -64,8 +62,8 @@ builder.Services.AddScoped(typeof(IAppLogger<>), typeof(LoggerAdapter<>));
 builder.Services.AddSingleton<CatalogMessageRegistry>();
 
 //MessageHandlers
-builder.Services.AddScoped<ICatalogMessageHandler<GetCatalogItemsByIdAsyncMessage, GetCatalogItemsByIdsAsyncReply>, GetCatalogItemsByIdsAsyncHandler>();
-builder.Services.AddScoped<ICatalogReplyHandlerAdapter, CatalogReplyHandlerAdapter<GetCatalogItemsByIdAsyncMessage, GetCatalogItemsByIdsAsyncReply>>();
+builder.Services.AddScoped<ICatalogMessageHandler<GetCatalogItemsByIdsAsyncMessage, GetCatalogItemsByIdsAsyncReply>, GetCatalogItemsByIdsAsyncHandler>();
+builder.Services.AddScoped<ICatalogReplyHandlerAdapter, CatalogReplyHandlerAdapter<GetCatalogItemsByIdsAsyncMessage, GetCatalogItemsByIdsAsyncReply>>();
 
 //MessageDispatcher
 builder.Services.AddSingleton<ICatalogMessageDispatcher, CatalogMessageDispatcher>();

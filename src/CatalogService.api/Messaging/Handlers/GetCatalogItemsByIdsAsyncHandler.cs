@@ -4,7 +4,7 @@ using CatalogService.api.Messaging.Replies;
 
 namespace CatalogService.api.Messaging.Handlers;
 
-public class GetCatalogItemsByIdsAsyncHandler : ICatalogMessageHandler<GetCatalogItemsByIdAsyncMessage, GetCatalogItemsByIdsAsyncReply>
+public class GetCatalogItemsByIdsAsyncHandler : ICatalogMessageHandler<GetCatalogItemsByIdsAsyncMessage, GetCatalogItemsByIdsAsyncReply>
 {
     private readonly ICatalogService _catalogService;
 
@@ -13,11 +13,11 @@ public class GetCatalogItemsByIdsAsyncHandler : ICatalogMessageHandler<GetCatalo
         _catalogService = catalogService;
     }
 
-    public async Task<GetCatalogItemsByIdsAsyncReply> HandleAsync(GetCatalogItemsByIdAsyncMessage message, CancellationToken cancellationToken = default)
+    public async Task<GetCatalogItemsByIdsAsyncReply> HandleAsync(GetCatalogItemsByIdsAsyncMessage message, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var catalogItems = await _catalogService.GetCatalogItemsByIdAsync(message.ids);
+        var catalogItems = await _catalogService.GetCatalogItemsByIdAsync(message.catalogItemIds);
 
         return new GetCatalogItemsByIdsAsyncReply(catalogItems);
     }

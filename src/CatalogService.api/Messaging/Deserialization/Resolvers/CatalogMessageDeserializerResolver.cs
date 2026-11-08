@@ -26,7 +26,7 @@ public class CatalogMessageDeserializerResolver : ICatalogMessageDeserializerRes
 
         if (string.IsNullOrWhiteSpace(envelope.Payload))
         {
-            throw new InvalidOperationException("The message type cannont be empty.");
+            throw new InvalidOperationException("The payload cannont be empty.");
         }
 
         var messageType = _messageRegistry.GetMessageType(envelope.MessageType);

@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using CatalogService.api.Interfaces;
 
-namespace CatalogService.api.Messaging.Deserializers;
+namespace CatalogService.api.Messaging.Deserialization;
 
 public class CatalogMessageDeserializer : ICatalogMessageDeserializer
 {
@@ -19,7 +19,7 @@ public class CatalogMessageDeserializer : ICatalogMessageDeserializer
 
         if (!typeof(ICatalogMessage).IsAssignableFrom(messageType)) 
         {
-            throw new ArgumentException($"{messageType.Name} must implement IBasketMessage");
+            throw new ArgumentException($"{messageType.Name} must implement ICatalogMessage");
         }
 
         return (ICatalogMessage?)JsonSerializer.Deserialize(

@@ -13,9 +13,9 @@ public class CatalogService : ICatalogService
         _catalogRepository = catalogRepository;
     }
 
-    public async Task<List<CatalogItem>> GetCatalogItemsByIdAsync(int[] ids)
+    public async Task<List<CatalogItem>> GetCatalogItemsByIdAsync(int[] catalogItemIds)
     {
-        CatalogItemsSpecification itemsSpecification = new CatalogItemsSpecification(ids);
+        CatalogItemsSpecification itemsSpecification = new CatalogItemsSpecification(catalogItemIds);
         List<CatalogItem> items = await _catalogRepository.ListAsync(itemsSpecification);
         return items;
     }

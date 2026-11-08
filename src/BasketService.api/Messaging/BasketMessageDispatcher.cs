@@ -51,6 +51,6 @@ public sealed class BasketMessageDispatcher : IBasketMessageDispatcher
             message,
             cancellationToken);
 
-        return reply ?? throw new InvalidOperationException($"Request handler for {message.GetType().Name} returend a null reply.");
+        return reply ?? throw new InvalidOperationException($"Request handler for {message.GetType().Name} returned a null reply.");
     }
 }
