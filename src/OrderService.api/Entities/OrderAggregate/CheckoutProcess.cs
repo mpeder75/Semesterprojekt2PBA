@@ -29,6 +29,21 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
         ShipToAddress = shipToAddress;
     }
 
+    /// <summary>
+    /// Er det samme request som det, checkouten blev startet med? Bruges til at afgøre, om en genbrugt
+    /// Idempotency-Key er et ægte genforsøg (samme kurv, køber og adresse) eller en konflikt.
+    /// </summary>
+    public bool IsSameRequest(int basketId, string buyerId, Address shipToAddress)
+    {
+        return BasketId == basketId
+               && BuyerId == buyerId
+               && ShipToAddress.Street == shipToAddress.Street
+               && ShipToAddress.City == shipToAddress.City
+               && ShipToAddress.State == shipToAddress.State
+               && ShipToAddress.Country == shipToAddress.Country
+               && ShipToAddress.ZipCode == shipToAddress.ZipCode;
+    }
+
     public void SetLines(IEnumerable<CheckoutLine> lines)
     {
         _lines.Clear();

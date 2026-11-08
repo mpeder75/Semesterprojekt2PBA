@@ -28,15 +28,26 @@ public class StartCheckoutEndpoint : IEndpoint
             return Results.BadRequest("BasketId is required.");
         }
 
-        var existing = await checkoutRepository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(checkoutId));
-
-        if(existing != null)
-        {
-            return AcceptedResponse(request, existing.CheckoutId);
-        }
-
         var a = request.ShipToAddress;
         var address = new Address(a.Street, a.City, a.State, a.Country, a.ZipCode);
+
+        var existing = await checkoutRepository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(checkoutId));
+
+        if (existing != null)
+        {
+            // Samme nøgle og samme request er et genforsøg; samme nøgle med andet indhold er en konflikt
+            return existing.IsSameRequest(request.BasketId, request.BuyerId, address)
+                ? AcceptedResponse(request, existing.CheckoutId)
+                : Results.Conflict("Idempotency-Key has already been used with a different request.");
+        }
+
+        // En anden nøgle på en kurv, der allerede har en checkout i gang, afvises
+        var activeOnBasket = await checkoutRepository.FirstOrDefaultAsync(new ActiveCheckoutByBasketIdSpec(request.BasketId));
+
+        if (activeOnBasket != null)
+        {
+            return Results.Conflict("The basket already has a checkout in progress.");
+        }
 
         var checkoutProcess = new CheckoutProcess(checkoutId, request.BasketId, request.BuyerId, address);
 
@@ -70,6 +81,8 @@ public class StartCheckoutEndpoint : IEndpoint
                     return await HandleAsync(request, checkoutId, checkoutRepository, manager);
                 })
             .Produces<StartCheckoutResponse>(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status409Conflict)
             .WithTags("OrderEndpoints");
     }
 }

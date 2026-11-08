@@ -34,6 +34,7 @@ public class OrderGetByIdEndpoint : IEndpoint<IResult, GetByIdOrderRequest, IRea
             Id = order.Id,
             OrderDate = order.OrderDate,
             Total = order.Total(),
+            Status = order.Status.ToString(),
             Address = new AddressDto
             {
                 Street = order.ShipToAddress.Street,

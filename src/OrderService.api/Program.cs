@@ -9,7 +9,6 @@ using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
 // DbContext
@@ -39,7 +38,6 @@ builder.Services.AddSingleton<IConnection>(_ =>
 });
 
 // Consumers
-builder.Services.AddHostedService<CreateOrderConsumer>();
 builder.Services.AddHostedService<OrderCheckoutReplyConsumer>();
 
 // Producers
@@ -76,6 +74,5 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
-app.MapControllers();
 app.MapEndpoints();
 app.Run();

@@ -6,5 +6,6 @@ public class OrderDetailDto
     public DateTimeOffset OrderDate { get; set; }
     public AddressDto Address { get; set; } = new();
     public decimal Total { get; set; }
+    public string Status { get; set; } = string.Empty;
     public List<OrderItemDto> OrderItems { get; set; } = new();
 }
