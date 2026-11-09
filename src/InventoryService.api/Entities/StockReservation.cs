@@ -5,6 +5,7 @@ public class StockReservation
     private readonly List<ReservationItem> _items = new();
     public int OrderId { get; private set; }
     public bool IsReleased { get; private set; }
+    public bool IsConfirmed { get; private set; }
     public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
     public IReadOnlyCollection<ReservationItem> Items => _items;
 
@@ -23,5 +24,17 @@ public class StockReservation
         .Select(x => (x.CatalogItemId, x.Quantity))
         .SequenceEqual(other.Items.OrderBy(x => x.CatalogItemId).Select(x => (x.CatalogItemId, x.Quantity)));
 
-    public void MarkReleased() => IsReleased = true;
+    public void Confirm()
+    {
+        if (IsReleased)
+            throw new InvalidOperationException("A released reservation cannot be confirmed.");
+
+        IsConfirmed = true;
+    }
+
+    public void MarkReleased()
+    {
+        IsConfirmed = false;
+        IsReleased = true;
+    }
 }

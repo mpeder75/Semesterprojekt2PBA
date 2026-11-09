@@ -116,7 +116,7 @@ public class InventoryConcurrencyTests(InventoryApiFactory factory) : IClassFixt
     }
 
     [Fact]
-    public async Task RowVersionMigration_PreservesExistingStockAndReservations()
+    public async Task Migrations_PreserveExistingStockAndReservations()
     {
         var isolated = new InventoryApiFactory();
         await isolated.InitializeAsync();
@@ -135,8 +135,8 @@ public class InventoryConcurrencyTests(InventoryApiFactory factory) : IClassFixt
                 await using var command = connection.CreateCommand();
                 command.CommandText = """
                     INSERT INTO InventoryItems (CatalogItemId, Quantity, ReservedQuantity) VALUES (1, 10, 3);
-                    INSERT INTO Reservations (OrderId, IsReleased) VALUES (42, 0);
-                    INSERT INTO ReservationItems (OrderId, CatalogItemId, Quantity) VALUES (42, 1, 3);
+                    INSERT INTO Reservations (OrderId, IsReleased) VALUES (42, 0), (43, 1);
+                    INSERT INTO ReservationItems (OrderId, CatalogItemId, Quantity) VALUES (42, 1, 3), (43, 1, 2);
                     """;
                 await command.ExecuteNonQueryAsync();
             }
@@ -147,12 +147,15 @@ public class InventoryConcurrencyTests(InventoryApiFactory factory) : IClassFixt
             Assert.Equal(10, stock.Quantity);
             Assert.Equal(3, stock.ReservedQuantity);
             Assert.Equal(8, stock.RowVersion.Length);
-            var reservation = await database.Reservations.Include(x => x.Items).SingleAsync();
-            Assert.Equal(42, reservation.OrderId);
+            var reservation = await database.Reservations.Include(x => x.Items).SingleAsync(x => x.OrderId == 42);
             Assert.False(reservation.IsReleased);
+            Assert.False(reservation.IsConfirmed);
             Assert.Single(reservation.Items);
             Assert.Equal(3, reservation.Items.Single().Quantity);
             Assert.Equal(8, reservation.RowVersion.Length);
+            var released = await database.Reservations.SingleAsync(x => x.OrderId == 43);
+            Assert.True(released.IsReleased);
+            Assert.False(released.IsConfirmed);
         }
         finally
         {

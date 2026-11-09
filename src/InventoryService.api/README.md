@@ -64,6 +64,7 @@ Production keeps Inventory disabled with no destination configured. A deployed I
 | `DELETE /api/inventory/{catalogItemId}` | Delete zero-stock records without reserved units: `204`; `404` when missing; `409` otherwise |
 | `POST /api/inventory/reservations` | Reserve all order items: `201`; identical replay `200`; insufficient stock or a changed order payload `409`; uninitialized product `404` |
 | `GET /api/inventory/reservations/{orderId}` | Read a reservation and its lines: `200`; `404` when missing |
+| `POST /api/inventory/reservations/{orderId}/confirm` | Confirm an existing allocation: `200`, including repeated confirmation; `404` when missing; `409` when released |
 | `POST /api/inventory/reservations/{orderId}/release` | Release reserved units: `200`, including repeated release; `404` when missing |
 
 Stock responses use `{ "catalogItemId": 1, "quantity": 10, "reservedQuantity": 3, "availableQuantity": 7 }`. `quantity` means on-hand stock; availability is on-hand minus reserved. Reserving and releasing do not reduce on-hand stock.
@@ -85,9 +86,11 @@ Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reserv
 
 ## Reservation lifecycle and service ownership
 
-A reservation belongs to one positive integer `orderId`, matching Order's existing ID type, and contains one positive quantity per distinct product. All lines succeed together or no stock/reservation changes are saved. Reservation status is `Reserved` or `Released`. Retrying the same order and lines returns its stored reservation; changing the lines returns `409`. Item order does not affect duplicate detection. Replaying a released reservation returns `Released` without reserving again. A new order needs a new ID.
+A reservation belongs to one positive integer `orderId`, matching Order's existing ID type, and contains one positive quantity per distinct product. All lines succeed together or no stock/reservation changes are saved. Retrying the same order and lines returns its stored reservation; changing the lines returns `409`. Item order does not affect duplicate detection. Replaying a released reservation returns `Released` without reserving again. A new order needs a new ID.
 
-There is no payment or expiration step. A confirmed order can retain its allocation until cancellation calls release. Payment, shipping/fulfillment, automatic expiry and automatic changes to Order statuses are outside this standalone service. Released reservations are retained to prevent delayed retries from allocating again, including after restart.
+A reservation starts as `Reserved`. Confirmation changes it to `Confirmed` and keeps all stock quantities unchanged. Explicit release works for either active status and returns the units to availability. A released reservation cannot be confirmed. Released reservations are retained to prevent delayed retries from allocating again, including after restart.
+
+Payment, shipping/fulfillment, automatic expiry and automatic changes to Order statuses are outside this standalone service.
 
 EF-managed read-committed transactions keep multi-item reservations/releases atomic. All repository reads use LINQ; there are no handwritten locking queries. `InventoryItem` and `StockReservation` each have a SQL Server-generated eight-byte `RowVersion`, configured with EF's `IsRowVersion()`. EF checks the original version when updating/deleting a row and raises a concurrency exception if another request changed it. Database check constraints also enforce valid quantity bounds.
 

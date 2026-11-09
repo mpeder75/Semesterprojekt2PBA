@@ -30,6 +30,7 @@ public static class InventoryEndpoints
             group.MapPost("/reservations", ReserveAsync)
                 .Produces<ReservationResponse>(StatusCodes.Status201Created).Produces<ReservationResponse>(),
             group.MapGet("/reservations/{orderId:int}", GetReservationAsync).Produces<ReservationResponse>(),
+            group.MapPost("/reservations/{orderId:int}/confirm", ConfirmAsync).Produces<ReservationResponse>(),
             group.MapPost("/reservations/{orderId:int}/release", ReleaseAsync).Produces<ReservationResponse>()
         };
         foreach (var route in routes)
@@ -111,6 +112,10 @@ public static class InventoryEndpoints
         return reservation is null ? Results.NotFound() : Results.Ok(ToResponse(reservation));
     }
 
+    private static async Task<IResult> ConfirmAsync(
+        int orderId, IStockService stock, CancellationToken cancellationToken) =>
+        Results.Ok(ToResponse(await stock.ConfirmAsync(orderId, cancellationToken)));
+
     private static async Task<IResult> ReleaseAsync(
         int orderId, IStockService stock, CancellationToken cancellationToken) =>
         Results.Ok(ToResponse(await stock.ReleaseAsync(orderId, cancellationToken)));
@@ -118,8 +123,16 @@ public static class InventoryEndpoints
     private static StockResponse ToResponse(InventoryItem item) =>
         new(item.CatalogItemId, item.Quantity, item.ReservedQuantity, item.AvailableQuantity);
 
-    private static ReservationResponse ToResponse(StockReservation reservation) =>
-        new(reservation.OrderId, reservation.IsReleased ? "Released" : "Reserved",
+    private static ReservationResponse ToResponse(StockReservation reservation)
+    {
+        var status = reservation switch
+        {
+            { IsReleased: true } => "Released",
+            { IsConfirmed: true } => "Confirmed",
+            _ => "Reserved"
+        };
+        return new(reservation.OrderId, status,
             reservation.Items.OrderBy(x => x.CatalogItemId)
                 .Select(x => new ReservationItemResponse(x.CatalogItemId, x.Quantity)).ToList());
+    }
 }

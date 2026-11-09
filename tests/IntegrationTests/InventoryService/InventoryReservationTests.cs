@@ -197,12 +197,48 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
             (await _client.PostAsync("/api/inventory/reservations", body)).StatusCode);
     }
 
-    [Fact]
-    public async Task MissingReservation_ReturnsNotFound()
+    [Theory]
+    [InlineData("confirm")]
+    [InlineData("release")]
+    public async Task MissingReservation_ReturnsNotFound(string operation)
     {
         var id = NextId();
         Assert.Equal(HttpStatusCode.NotFound,
-            (await _client.PostAsync($"/api/inventory/reservations/{id}/release", null)).StatusCode);
+            (await _client.PostAsync($"/api/inventory/reservations/{id}/{operation}", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Confirmation_PersistsAcrossRestartAndKeepsStockAllocated()
+    {
+        var id = await CreateStock(10);
+        var order = NextId();
+        using var reserved = await Reserve(order, (id, 3));
+        Assert.Equal(HttpStatusCode.Created, reserved.StatusCode);
+        var reservationUrl = $"/api/inventory/reservations/{order}";
+
+        using var confirmed = await _client.PostAsync($"{reservationUrl}/confirm", null);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        Assert.Equal("Confirmed", (await confirmed.Content.ReadFromJsonAsync<Reservation>())!.Status);
+        await AssertStock(id, 10, 3);
+
+        await using var restarted = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["ConnectionStrings:InventoryConnection"] = _factory.ConnectionString })));
+        using var client = restarted.CreateClient();
+        var stored = await client.GetFromJsonAsync<Reservation>(reservationUrl);
+        Assert.Equal("Confirmed", stored!.Status);
+
+        using var retry = await client.PostAsync($"{reservationUrl}/confirm", null);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal("Confirmed", (await retry.Content.ReadFromJsonAsync<Reservation>())!.Status);
+        await AssertStock(id, 10, 3);
+
+        using var release = await client.PostAsync($"{reservationUrl}/release", null);
+        Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal("Released", (await release.Content.ReadFromJsonAsync<Reservation>())!.Status);
+        using var rejected = await client.PostAsync($"{reservationUrl}/confirm", null);
+        Assert.Equal(HttpStatusCode.Conflict, rejected.StatusCode);
+        await AssertStock(id, 10, 0);
     }
 
     [Fact]

@@ -76,6 +76,9 @@ namespace InventoryService.api.Repositories.Migrations
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsConfirmed")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsReleased")
                         .HasColumnType("bit");
 

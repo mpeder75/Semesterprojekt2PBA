@@ -87,6 +87,18 @@ public class StockService(IInventoryRepository repository) : IStockService
         }, cancellationToken);
     }
 
+    public Task<StockReservation> ConfirmAsync(int orderId, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
+        return InTransactionAsync(async () =>
+        {
+            var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken)
+                ?? throw new KeyNotFoundException("Reservation not found.");
+            ApplyStockRule(reservation.Confirm);
+            return reservation;
+        }, cancellationToken);
+    }
+
     public Task<StockReservation> ReleaseAsync(int orderId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
