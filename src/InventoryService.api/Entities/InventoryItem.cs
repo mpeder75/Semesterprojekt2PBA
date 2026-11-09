@@ -5,6 +5,7 @@ public class InventoryItem
     public int CatalogItemId { get; private set; }
     public int Quantity { get; private set; }
     public int ReservedQuantity { get; private set; }
+    public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
     public int AvailableQuantity => Quantity - ReservedQuantity;
 
     public InventoryItem(int catalogItemId, int quantity)

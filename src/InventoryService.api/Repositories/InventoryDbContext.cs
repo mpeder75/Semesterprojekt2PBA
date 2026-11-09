@@ -20,6 +20,7 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
             });
             item.HasKey(x => x.CatalogItemId);
             item.Property(x => x.CatalogItemId).ValueGeneratedNever();
+            item.Property(x => x.RowVersion).IsRowVersion();
             item.Ignore(x => x.AvailableQuantity);
         });
 
@@ -29,6 +30,7 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
                 table.HasCheckConstraint("CK_Reservations_OrderId", "[OrderId] > 0"));
             reservation.HasKey(x => x.OrderId);
             reservation.Property(x => x.OrderId).ValueGeneratedNever();
+            reservation.Property(x => x.RowVersion).IsRowVersion();
             // This relationship stays entirely inside Inventory's own database.
             reservation.HasMany(x => x.Items).WithOne().HasForeignKey("OrderId").OnDelete(DeleteBehavior.Cascade);
         });

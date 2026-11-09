@@ -18,7 +18,7 @@ its own host and configuration without process-wide environment-variable changes
 
 | Tests | Behavior covered |
 | --- | --- |
-| `ServiceRoutingTests` | All eight combinations of service flags; Catalog fallback; disabled Basket/Order returning 503; routing by metadata instead of route names; root paths, trailing slashes and nested paths; Basket path transforms; Web and login routing; methods, query strings, bodies and authorization; gateway liveness. |
+| `ServiceRoutingTests` | All sixteen combinations of Catalog/Basket/Order/Inventory flags; Catalog fallback; disabled Basket/Order/Inventory returning 503; routing by metadata instead of route names; root paths, trailing slashes and nested paths; Basket path transforms; Web and login routing; methods, query strings, bodies and authorization; gateway liveness. |
 | `StartupValidationTests` | Required destinations, invalid addresses, missing flags, unknown service metadata, and initialization order. Production intentionally refuses Catalog OFF while PublicApi is unavailable. |
 | `TrafficControlTests` | Shared API budget, separate login budget, per-client allowances using trusted forwarded headers, forged headers, and invalid limits. |
 | `ForwardedHeadersTests` | Trusted loopback and Azure private networks, IPv4 and mapped IPv6, rejection of untrusted proxy headers, and the one-hop limit. |
@@ -33,12 +33,13 @@ its own host and configuration without process-wide environment-variable changes
 | --- | ---: | --- |
 | [ProxyOutcomeClassifierTests](ProxyOutcomeClassifierTests.cs) | 34 | Selected backend status/transport errors, client cancellation, ambiguous/local errors, and destination stream failures combined with proxy abort. |
 | [GatewayCircuitBreakerRegistryTests](GatewayCircuitBreakerRegistryTests.cs) | 12 | Pipeline reuse and concurrent creation, retained failure history, cluster/process-state isolation, local exceptions, minimum throughput, failure ratio and sampling-window expiry. |
-| [CircuitBreakerHttpTests](CircuitBreakerHttpTests.cs) | 11 | Opening and rejection without forwarding, Problem Details and Retry-After, shared Catalog route state, selected legacy backend, independent services, excluded routes, and single-attempt POSTs. |
+| [CircuitBreakerHttpTests](CircuitBreakerHttpTests.cs) | 13 | Opening and rejection without forwarding, Problem Details and Retry-After, shared Catalog route state, selected legacy backend, independent services including Inventory, excluded routes, and single-attempt POSTs. |
 | [CircuitBreakerRecoveryTests](CircuitBreakerRecoveryTests.cs) | 5 | Successful/failed recovery trials, reopening, one concurrent trial while other calls are rejected, and a client-cancelled trial retaining protection until a later successful trial. |
 | [CircuitBreakerConfigurationTests](CircuitBreakerConfigurationTests.cs) | 11 | Invalid settings stop startup; valid boundary values start and bind correctly. |
 | [CircuitBreakerFailurePolicyTests](CircuitBreakerFailurePolicyTests.cs) | 15 | Ordinary 4xx responses, selected backend 5xx responses, connection failures, gateway deadlines, actual client cancellation, local rate-limit rejections and disabled-service responses. |
+| [InventoryGatewayTests](InventoryGatewayTests.cs) — breaker cases | 5 | Inventory connection/backend outages, isolation from Catalog/Basket/Order, recovery, and 400/404/409 business outcomes staying outside circuit failure accounting. |
 
-These 88 cases exercise the shared implementation with independent circuit
+These 95 cases exercise the shared implementation with independent circuit
 state per selected cluster. Each host has its own registry. FakeTimeProvider
 controls circuit sampling and recovery durations; concurrent trials use
 completion signals instead of timing sleeps. HTTP deadline tests use a short
@@ -57,6 +58,12 @@ request-deadline cancellation without normalization, and 504 with it. This
 documents why the middleware is necessary with the installed versions.
 
 ## Recorded local verification
+
+On 4 November 2026, the gateway Debug run passed **298 tests, 0 failed, 0 skipped**. This includes 15 dedicated Inventory gateway cases plus the expanded routing, startup, configuration, timeout, rate-limit and circuit-breaker checks. The routing test covers all 16 flag combinations. The default Inventory flag is false; Development points to `http://localhost:57967/`, while Production requires an explicitly configured destination before enabling Inventory.
+
+The shared integration project also passed **53 tests, 0 failed, 0 skipped**. Its new [InventoryGatewayIntegrationTests](../IntegrationTests/InventoryService/InventoryGatewayIntegrationTests.cs) hosts the actual gateway and Inventory apps in-process, forwards through YARP into Inventory's TestServer, and verifies CRUD, adjustments and reservation/release behavior against a temporary SQL Server database. The test transport replaces outbound sockets; this is not a live Azure deployment or a test of an externally hosted Inventory URL.
+
+Gateway results are recorded in the ignored `TestResults/inventory-gateway.trx`; the shared suite writes `../IntegrationTests/TestResults/inventory-gateway-integration.trx`. Gateway tests themselves need no SQL Server; the shared integration suite requires its documented test database setup.
 
 The local Release gateway run on 3 November 2026 passed:
 **255 passed, 0 failed, 0 skipped**, including all 88 circuit-breaker cases.

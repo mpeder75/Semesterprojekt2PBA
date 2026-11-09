@@ -5,6 +5,7 @@ public class StockReservation
     private readonly List<ReservationItem> _items = new();
     public int OrderId { get; private set; }
     public bool IsReleased { get; private set; }
+    public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
     public IReadOnlyCollection<ReservationItem> Items => _items;
 
     private StockReservation() { }

@@ -124,4 +124,75 @@ public class StockServiceTests
         Assert.Equal(10, item.Quantity);
         await _transaction.DidNotReceiveWithAnyArgs().CommitAsync(default);
     }
+
+    [Fact]
+    public async Task KnownConcurrencyFailure_ReloadsAndAppliesTheAdjustmentOnce()
+    {
+        var stale = new InventoryItem(1, 10);
+        var current = new InventoryItem(1, 12);
+        var retryTransaction = Substitute.For<IInventoryTransaction>();
+        _repository.BeginTransactionAsync(default).Returns(_transaction, retryTransaction);
+        _repository.GetStockForUpdateAsync(1, default).Returns(stale, current);
+        _transaction.CommitAsync(default).Returns(Task.FromException(new InventoryConcurrencyException("Changed")));
+
+        var result = await _service.AdjustAsync(1, 1, default);
+
+        Assert.Same(current, result);
+        Assert.Equal(13, result.Quantity);
+        await _transaction.Received(1).DisposeAsync();
+        await retryTransaction.Received(1).CommitAsync(default);
+    }
+
+    [Fact]
+    public async Task UncertainCommitFailure_IsNotAutomaticallyRetried()
+    {
+        _repository.GetStockForUpdateAsync(1, default).Returns(new InventoryItem(1, 10));
+        _transaction.CommitAsync(default).Returns(Task.FromException(new InvalidOperationException("Commit outcome unknown")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AdjustAsync(1, 1, default));
+
+        await _repository.Received(1).BeginTransactionAsync(default);
+        await _transaction.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RepeatedConcurrencyFailures_StopWithBusinessConflict()
+    {
+        _repository.GetStockForUpdateAsync(1, default).Returns(_ => new InventoryItem(1, 10));
+        _transaction.CommitAsync(default).Returns(Task.FromException(new InventoryConcurrencyException("Changed")));
+
+        await Assert.ThrowsAsync<InventoryConflictException>(() => _service.AdjustAsync(1, 1, default));
+
+        await _repository.Received(5).BeginTransactionAsync(default);
+    }
+
+    [Fact]
+    public async Task ConcurrentIdenticalOrder_RechecksReservationBeforeRejectingInsufficientStock()
+    {
+        var existing = new StockReservation(42, new[] { new ReservationItem(1, 7) });
+        _repository.GetReservationForUpdateAsync(42, default).Returns((StockReservation?)null, existing);
+        _repository.GetReservationAsync(42, default).Returns(existing);
+        var currentStock = new InventoryItem(1, 10);
+        currentStock.Reserve(7);
+        _repository.GetStockForUpdateAsync(1, default).Returns(currentStock);
+
+        var result = await _service.ReserveAsync(42, new[] { new ReservationItem(1, 7) }, default);
+
+        Assert.False(result.Created);
+        Assert.Same(existing, result.Reservation);
+        Assert.Equal(7, currentStock.ReservedQuantity);
+    }
+
+    [Fact]
+    public async Task ConcurrentRelease_RechecksReservationBeforeReleasingAlreadyReturnedUnits()
+    {
+        var initial = new StockReservation(42, new[] { new ReservationItem(1, 3) });
+        var released = new StockReservation(42, new[] { new ReservationItem(1, 3) });
+        released.MarkReleased();
+        _repository.GetReservationForUpdateAsync(42, default).Returns(initial, released);
+        _repository.GetReservationAsync(42, default).Returns(released);
+        _repository.GetStockForUpdateAsync(1, default).Returns(new InventoryItem(1, 10));
+
+        Assert.Same(released, await _service.ReleaseAsync(42, default));
+    }
 }

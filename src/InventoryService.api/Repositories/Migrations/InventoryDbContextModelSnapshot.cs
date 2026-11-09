@@ -32,6 +32,12 @@ namespace InventoryService.api.Repositories.Migrations
                     b.Property<int>("ReservedQuantity")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.HasKey("CatalogItemId");
 
                     b.ToTable("InventoryItems", null, t =>
@@ -72,6 +78,12 @@ namespace InventoryService.api.Repositories.Migrations
 
                     b.Property<bool>("IsReleased")
                         .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.HasKey("OrderId");
 

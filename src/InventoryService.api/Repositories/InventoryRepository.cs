@@ -1,6 +1,7 @@
 using System.Data;
 using InventoryService.api.Entities;
 using InventoryService.api.Interfaces;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -13,18 +14,15 @@ public class InventoryRepository(InventoryDbContext database) : IInventoryReposi
             .SingleOrDefaultAsync(x => x.CatalogItemId == catalogItemId, cancellationToken);
 
     public Task<InventoryItem?> GetStockForUpdateAsync(int catalogItemId, CancellationToken cancellationToken) =>
-        database.InventoryItems.FromSqlInterpolated($"""
-            SELECT * FROM [InventoryItems] WITH (UPDLOCK, HOLDLOCK) WHERE [CatalogItemId] = {catalogItemId}
-            """).SingleOrDefaultAsync(cancellationToken);
+        database.InventoryItems.SingleOrDefaultAsync(x => x.CatalogItemId == catalogItemId, cancellationToken);
 
     public Task<StockReservation?> GetReservationAsync(int orderId, CancellationToken cancellationToken) =>
         database.Reservations.AsNoTracking().Include(x => x.Items)
             .SingleOrDefaultAsync(x => x.OrderId == orderId, cancellationToken);
 
     public Task<StockReservation?> GetReservationForUpdateAsync(int orderId, CancellationToken cancellationToken) =>
-        database.Reservations.FromSqlInterpolated($"""
-            SELECT * FROM [Reservations] WITH (UPDLOCK, HOLDLOCK) WHERE [OrderId] = {orderId}
-            """).Include(x => x.Items).SingleOrDefaultAsync(cancellationToken);
+        database.Reservations.Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.OrderId == orderId, cancellationToken);
 
     public void AddStock(InventoryItem item) => database.InventoryItems.Add(item);
 
@@ -34,7 +32,7 @@ public class InventoryRepository(InventoryDbContext database) : IInventoryReposi
 
     public async Task<IInventoryTransaction> BeginTransactionAsync(CancellationToken cancellationToken)
     {
-        var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         return new InventoryTransaction(database, transaction);
     }
 
@@ -45,7 +43,21 @@ public class InventoryRepository(InventoryDbContext database) : IInventoryReposi
 
         public async Task CommitAsync(CancellationToken cancellationToken)
         {
-            await database.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException error)
+            {
+                throw new InventoryConcurrencyException("Inventory changed while the operation was being saved.", error);
+            }
+            catch (DbUpdateException error) when (error.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                // A concurrent request inserted the same stock/order ID after our initial read.
+                throw new InventoryConcurrencyException("Another request created this stock record or reservation.", error);
+            }
+
+            // A commit failure has an uncertain outcome. Do not translate it into a retryable conflict.
             await transaction.CommitAsync(cancellationToken);
             _committed = true;
         }

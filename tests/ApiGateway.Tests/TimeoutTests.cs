@@ -22,6 +22,7 @@ public sealed class TimeoutTests
     [InlineData("catalog-items", "/api/catalog-items", false)]
     [InlineData("basket-api", "/api/baskets", false)]
     [InlineData("order-api", "/api/orders", false)]
+    [InlineData("inventory-api", "/api/inventory/1", false)]
     [InlineData("api-login", "/api/authenticate", true)]
     [InlineData("web-login", "/Identity/Account/Login", true)]
     public async Task Route_timeout_returns_504_and_cancels_the_downstream_request(
@@ -30,7 +31,7 @@ public sealed class TimeoutTests
         var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true,
+            Catalog = true, Basket = true, Order = true, Inventory = true,
             Configuration = new Dictionary<string, string?>
             {
                 [$"ReverseProxy:Routes:{route}:Timeout"] = "00:00:00.200"

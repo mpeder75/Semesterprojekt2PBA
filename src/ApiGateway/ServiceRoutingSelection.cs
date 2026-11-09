@@ -13,7 +13,10 @@ public sealed class ServiceRoutingSelection
             "basket-service", null),
 
         new(ServiceRouteMetadata.Order, "UseOrderService",
-            "order-service", null)
+            "order-service", null),
+
+        new(ServiceRouteMetadata.Inventory, "UseInventoryService",
+            "inventory-service", null)
     };
 
     private readonly IVariantFeatureManager _featureManager;

@@ -67,10 +67,20 @@ public class StockService(IInventoryRepository repository) : IStockService
                 // A delayed replay returns even a released reservation without allocating again.
                 return (existing, false);
             }
-            foreach (var line in requested.Items.OrderBy(x => x.CatalogItemId))
+            try
             {
-                var stock = await RequireStockAsync(line.CatalogItemId, cancellationToken);
-                ApplyStockRule(() => stock.Reserve(line.Quantity));
+                foreach (var line in requested.Items.OrderBy(x => x.CatalogItemId))
+                {
+                    var stock = await RequireStockAsync(line.CatalogItemId, cancellationToken);
+                    ApplyStockRule(() => stock.Reserve(line.Quantity));
+                }
+            }
+            catch (Exception error) when (error is InventoryConflictException or KeyNotFoundException)
+            {
+                // An identical concurrent request may have reserved these units since the first read.
+                if (await repository.GetReservationAsync(orderId, cancellationToken) is not null)
+                    throw new InventoryConcurrencyException("The order was reserved concurrently; reload its outcome.");
+                throw;
             }
             repository.AddReservation(requested);
             return (requested, true);
@@ -84,15 +94,24 @@ public class StockService(IInventoryRepository repository) : IStockService
         {
             var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken)
                 ?? throw new KeyNotFoundException("Reservation not found.");
-            if (!reservation.IsReleased)
+            if (reservation.IsReleased)
+                return reservation;
+
+            try
             {
                 foreach (var line in reservation.Items.OrderBy(x => x.CatalogItemId))
                 {
                     var stock = await RequireStockAsync(line.CatalogItemId, cancellationToken);
                     ApplyStockRule(() => stock.Release(line.Quantity));
                 }
-                reservation.MarkReleased();
             }
+            catch (Exception error) when (error is InventoryConflictException or KeyNotFoundException)
+            {
+                if ((await repository.GetReservationAsync(orderId, cancellationToken))?.IsReleased == true)
+                    throw new InventoryConcurrencyException("The order was released concurrently; reload its outcome.");
+                throw;
+            }
+            reservation.MarkReleased();
             return reservation;
         }, cancellationToken);
     }
@@ -106,11 +125,23 @@ public class StockService(IInventoryRepository repository) : IStockService
 
     private async Task<T> InTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {
-        // The repository commits the complete operation together, or rolls it back when disposed.
-        await using var transaction = await repository.BeginTransactionAsync(cancellationToken);
-        var result = await action();
-        await transaction.CommitAsync(cancellationToken);
-        return result;
+        const int maxAttempts = 5;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await using var transaction = await repository.BeginTransactionAsync(cancellationToken);
+                var result = await action();
+                await transaction.CommitAsync(cancellationToken);
+                return result;
+            }
+            catch (InventoryConcurrencyException)
+            {
+                // Disposal rolls back and clears tracking before the next attempt.
+            }
+        }
+        throw new InventoryConflictException("Inventory changed concurrently. Please retry the operation.");
     }
 
     private static void ApplyStockRule(Action change)

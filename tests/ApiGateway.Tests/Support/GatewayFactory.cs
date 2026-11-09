@@ -19,6 +19,7 @@ internal sealed record GatewayOptions
     public bool Catalog { get; init; }
     public bool Basket { get; init; }
     public bool Order { get; init; }
+    public bool Inventory { get; init; }
     public string Environment { get; init; } = "Testing";
     public bool UseConfiguredDestinations { get; init; }
     public bool AzureAppService { get; init; }
@@ -47,7 +48,7 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
 {
     public static readonly string[] Clusters =
     {
-        "monolith-api", "monolith-web", "catalog-service", "basket-service", "order-service"
+        "monolith-api", "monolith-web", "catalog-service", "basket-service", "order-service", "inventory-service"
     };
 
     private readonly GatewayOptions _options;
@@ -63,6 +64,7 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
             ["FeatureManagement:UseCatalogService"] = _options.Catalog.ToString(),
             ["FeatureManagement:UseBasketService"] = _options.Basket.ToString(),
             ["FeatureManagement:UseOrderService"] = _options.Order.ToString(),
+            ["FeatureManagement:UseInventoryService"] = _options.Inventory.ToString(),
             ["WEBSITE_SITE_NAME"] = _options.AzureAppService ? "gateway-test-site" : "",
             ["Logging:LogLevel:Default"] = "Error"
         };

@@ -14,17 +14,18 @@ public sealed class ServiceRoutingTests
         foreach (var catalog in new[] { false, true })
         foreach (var basket in new[] { false, true })
         foreach (var order in new[] { false, true })
-            yield return new object[] { catalog, basket, order };
+        foreach (var inventory in new[] { false, true })
+            yield return new object[] { catalog, basket, order, inventory };
     }
 
     [Theory]
     [MemberData(nameof(FlagCombinations))]
     public async Task Every_service_follows_its_own_flag(
-        bool catalog, bool basket, bool order)
+        bool catalog, bool basket, bool order, bool inventory)
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = catalog, Basket = basket, Order = order
+            Catalog = catalog, Basket = basket, Order = order, Inventory = inventory
         });
         using var client = factory.CreateGatewayClient();
 
@@ -44,7 +45,12 @@ public sealed class ServiceRoutingTests
         else
             await AssertDisabled(client, "/api/orders", "Order");
 
-        Assert.Equal(3 + (basket ? 1 : 0) + (order ? 1 : 0), factory.Requests.Count);
+        if (inventory)
+            await AssertForwarded(client, "/api/inventory/1", "inventory-service", "/api/inventory/1");
+        else
+            await AssertDisabled(client, "/api/inventory/1", "Inventory");
+
+        Assert.Equal(3 + (basket ? 1 : 0) + (order ? 1 : 0) + (inventory ? 1 : 0), factory.Requests.Count);
     }
 
     [Theory]
@@ -56,6 +62,10 @@ public sealed class ServiceRoutingTests
     [InlineData("/api/orders", "order-service", "/api/orders")]
     [InlineData("/api/orders/", "order-service", "/api/orders/")]
     [InlineData("/api/orders/123/items", "order-service", "/api/orders/123/items")]
+    [InlineData("/api/inventory", "inventory-service", "/api/inventory")]
+    [InlineData("/api/inventory/", "inventory-service", "/api/inventory/")]
+    [InlineData("/api/inventory/1", "inventory-service", "/api/inventory/1")]
+    [InlineData("/api/inventory/reservations/42/release", "inventory-service", "/api/inventory/reservations/42/release")]
     [InlineData("/api/baskets", "basket-service", "/basket")]
     [InlineData("/api/baskets/", "basket-service", "/basket/")]
     [InlineData("/api/baskets/customer/items", "basket-service", "/basket/customer/items")]
@@ -64,7 +74,7 @@ public sealed class ServiceRoutingTests
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true
+            Catalog = true, Basket = true, Order = true, Inventory = true
         });
         using var client = factory.CreateGatewayClient();
         await AssertForwarded(client, path, cluster, backendPath);
@@ -75,6 +85,10 @@ public sealed class ServiceRoutingTests
     [InlineData("/api/orders", "Order")]
     [InlineData("/api/orders/", "Order")]
     [InlineData("/api/orders/123", "Order")]
+    [InlineData("/api/inventory", "Inventory")]
+    [InlineData("/api/inventory/", "Inventory")]
+    [InlineData("/api/inventory/1", "Inventory")]
+    [InlineData("/api/inventory/reservations/42", "Inventory")]
     [InlineData("/api/baskets", "Basket")]
     [InlineData("/api/baskets/", "Basket")]
     [InlineData("/api/baskets/example", "Basket")]
@@ -96,6 +110,7 @@ public sealed class ServiceRoutingTests
     [InlineData("/api/unknown", "monolith-api")]
     [InlineData("/api/orders-extra", "monolith-api")]
     [InlineData("/api/baskets-extra", "monolith-api")]
+    [InlineData("/api/inventory-extra", "monolith-api")]
     [InlineData("/api/authenticate", "monolith-api")]
     public async Task Untagged_routes_keep_their_normal_destinations(string path, string cluster)
     {
@@ -111,6 +126,8 @@ public sealed class ServiceRoutingTests
     [InlineData("Basket", true, "basket-service")]
     [InlineData("Order", false, null)]
     [InlineData("Order", true, "order-service")]
+    [InlineData("Inventory", false, null)]
+    [InlineData("Inventory", true, "inventory-service")]
     public async Task Service_metadata_controls_a_route_with_an_unrelated_id_and_path(
         string service, bool enabled, string? expectedCluster)
     {
@@ -120,6 +137,7 @@ public sealed class ServiceRoutingTests
             Catalog = service == "Catalog" && enabled,
             Basket = service == "Basket" && enabled,
             Order = service == "Order" && enabled,
+            Inventory = service == "Inventory" && enabled,
             Configuration = new Dictionary<string, string?>
             {
                 ["ReverseProxy:Routes:unrelated-name:ClusterId"] = "monolith-web",
@@ -144,12 +162,13 @@ public sealed class ServiceRoutingTests
     [InlineData("Catalog", "catalog-items", "/api/catalog-items", "catalog-service")]
     [InlineData("Basket", "basket-api", "/api/baskets", "basket-service")]
     [InlineData("Order", "order-api", "/api/orders", "order-service")]
+    [InlineData("Inventory", "inventory-api", "/api/inventory/1", "inventory-service")]
     public async Task Service_labels_are_case_insensitive(
         string service, string route, string path, string cluster)
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true,
+            Catalog = true, Basket = true, Order = true, Inventory = true,
             Configuration = new Dictionary<string, string?>
             {
                 [$"ReverseProxy:Routes:{route}:Metadata:Service"] = service.ToLowerInvariant()
@@ -166,13 +185,14 @@ public sealed class ServiceRoutingTests
     [InlineData("Catalog", "/api/catalog-items/7?include=details&page=2", "/api/catalog-items/7")]
     [InlineData("Basket", "/api/baskets/customer/items?include=details&page=2", "/basket/customer/items")]
     [InlineData("Order", "/api/orders/7?include=details&page=2", "/api/orders/7")]
+    [InlineData("Inventory", "/api/inventory/7?include=details&page=2", "/api/inventory/7")]
     public async Task Forwarding_preserves_method_query_body_and_authorization(
         string service, string path, string expectedPath)
     {
         const string json = "{\"itemId\":7,\"quantity\":2}";
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true
+            Catalog = true, Basket = true, Order = true, Inventory = true
         });
         using var client = factory.CreateGatewayClient();
         using var request = new HttpRequestMessage(HttpMethod.Put, path)

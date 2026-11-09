@@ -5,7 +5,7 @@ namespace InventoryService.api.Interfaces;
 public interface IInventoryRepository
 {
     Task<InventoryItem?> GetStockAsync(int catalogItemId, CancellationToken cancellationToken);
-    // For-update reads participate in the active transaction and protect the loaded state from concurrent writers.
+    // For-update reads return tracked entities. RowVersion is checked when the transaction is saved.
     Task<InventoryItem?> GetStockForUpdateAsync(int catalogItemId, CancellationToken cancellationToken);
     Task<StockReservation?> GetReservationAsync(int orderId, CancellationToken cancellationToken);
     Task<StockReservation?> GetReservationForUpdateAsync(int orderId, CancellationToken cancellationToken);

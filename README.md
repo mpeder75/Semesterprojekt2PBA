@@ -43,15 +43,15 @@ I skal sikre jer, at følgende krav opfyldes i jeres projekt:
 
 ### API Gateway og circuit breaker
 
-API Gateway er implementeret med YARP og Polly.Core. Catalog-, Basket- og
-Order-API-ruter med service-metadata anvender circuit breaker med separat
+API Gateway er implementeret med YARP og Polly.Core. Catalog-, Basket-, Order- og
+Inventory-API-ruter med service-metadata anvender circuit breaker med separat
 tilstand pr. valgt backend-cluster. Ved gentagne backend-fejl afviser gatewayen kald med HTTP 503
 og `code: circuit_open`; efter pausen tillades et prøvekald til backend.
 Rate limiting og request-timeouts håndteres fortsat af ASP.NET Core.
 
 Standardværdierne er 50 % fejl, mindst 5 afsluttede kald i et vindue på 30 sekunder
 og en pause på 15 sekunder. Den lokale gateway-testsuite er verificeret med
-255 beståede tests. En lokal demonstration har også verificeret, at Catalog
+298 beståede tests den 4. november 2026. En tidligere lokal demonstration har også verificeret, at Catalog
 afskærmes under fejl, mens Basket forbliver tilgængelig, og at trafikken genoptages
 efter et vellykket prøvekald.
 
@@ -65,11 +65,16 @@ Inventory Service har egen SQL Server-database og HTTP-endpoints til at oprette,
 hente, ændre og slette lagerposter samt reservere og frigive varer pr. ordre.
 Reserverede varer trækkes fra den tilgængelige beholdning. Servicen er udviklet test-first med
 unit tests og HTTP-integrationstests mod SQL Server. Den kører selvstændigt uden
-RabbitMQ og er endnu ikke tilføjet til gatewayens routing.
+RabbitMQ og kan tilgås gennem gatewayens `/api/inventory/...`-rute, når
+`UseInventoryService` aktiveres og gatewayen genstartes. Flaget er som standard
+slået fra. Development peger på `http://localhost:57967/`; Production kræver en
+konfigureret Inventory-adresse før aktivering.
 
 Strukturen følger onion-principper med domæneregler i `Entities`, kontrakter i
 `Interfaces`, operationer i `Services` og databaseadgang, transaktioner og migrations
 i `Repositories`. Servicelaget anvender repository-interfacet og indeholder ingen EF Core-kode.
+Repository-forespørgsler anvender LINQ/EF Core. `RowVersion` på lagerposter og
+reservationer beskytter mod samtidige ændringer; der anvendes ingen håndskrevne SQL-forespørgsler i servicen.
 
 - [Inventory: lokal opstart, API og tests](src/InventoryService.api/README.md)
 

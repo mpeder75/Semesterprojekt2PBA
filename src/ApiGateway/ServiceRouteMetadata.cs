@@ -7,6 +7,7 @@ public static class ServiceRouteMetadata
     public const string Catalog = "Catalog";
     public const string Basket = "Basket";
     public const string Order = "Order";
+    public const string Inventory = "Inventory";
 
     public static string? GetService(RouteConfig? route)
     {

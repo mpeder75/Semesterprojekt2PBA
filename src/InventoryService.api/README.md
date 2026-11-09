@@ -11,13 +11,13 @@ The service uses a folder-based onion-style structure within one project. Busine
 | `Entities` | Domain objects and quantity/reservation rules; no EF Core or HTTP dependencies |
 | `Interfaces` | Application contracts: `IStockService`, `IInventoryRepository`, and `IInventoryTransaction` |
 | `Services` | Stock and reservation workflows, implemented by `StockService` using the repository contract |
-| `Repositories` | `InventoryRepository`, `InventoryDbContext`, SQL queries/locks, transaction/save handling, and persistence registration |
+| `Repositories` | `InventoryRepository`, `InventoryDbContext`, EF/LINQ queries, optimistic concurrency, transaction/save handling, and persistence registration |
 | `Repositories/Migrations` | Existing EF migrations and the model snapshot |
 | `Endpoints` and `Models` | HTTP routing, request validation, response DTOs, and mapping |
 
 Endpoints request `IStockService`. `StockService` depends on `IInventoryRepository` and domain entities. `InventoryRepository` implements that inner contract using EF Core. The domain, contracts and service contain no database queries or EF Core references. `Program.cs` is the composition root: it connects the interfaces to their implementations and calls the repository startup migration helper.
 
-The application service defines which changes form one operation through `IInventoryTransaction`. The repository handles the SQL transaction, locking, saving and rollback. An abandoned transaction also clears pending EF changes, allowing the repository to be reused safely within the same scope. There is no generic repository base or Ardalis dependency in Inventory.
+The application service defines which changes form one operation through `IInventoryTransaction`. The repository uses EF for queries, change tracking, saving and transaction handling. An abandoned transaction also clears pending EF changes, allowing the repository to be reused safely within the same scope. There is no generic repository base or Ardalis dependency in Inventory.
 
 These layer boundaries are expressed through folders, namespaces and interfaces within the single project; separate assemblies do not enforce them. Moving the existing migrations into `Repositories/Migrations` preserves their IDs and database schema.
 
@@ -34,7 +34,24 @@ The default connection uses Windows authentication and the dedicated `InventoryD
 
 To use another SQL Server, supply `ConnectionStrings__InventoryConnection` through the environment or user secrets. Keep passwords out of tracked files. The account needs permission to create the database/apply migrations for this local startup workflow.
 
-Swagger is available in Development at `http://localhost:57967/swagger`. Call the service directly on this port; Inventory has not yet been added to the gateway.
+Swagger is available in Development at `http://localhost:57967/swagger`. The service can also be reached through the gateway after enabling its Inventory flag.
+
+## Run through the gateway
+
+Keep Inventory running on port 57967. In a second terminal at the repository root:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
+$env:FeatureManagement__UseInventoryService = 'true'
+dotnet run --project src/ApiGateway --no-launch-profile -- --urls 'https://localhost:7153'
+```
+
+Use `https://localhost:7153/api/inventory` for the API operations below; the gateway forwards their paths, methods and bodies unchanged. For example, create with `POST https://localhost:7153/api/inventory` and read with `GET https://localhost:7153/api/inventory/1`. Trust the local ASP.NET development certificate when using HTTPS, as described in the [gateway README](../ApiGateway/README.md#run-locally).
+
+The shared flag defaults to false; disabled Inventory routes return 503 Problem Details and do not reach any backend. Restart the gateway after changing the flag. Enabled Inventory routes use the existing API rate limit (60 requests per minute per client), two-minute deadline, and an independent `inventory-service` circuit. A 409 business conflict does not open that circuit.
+
+Production keeps Inventory disabled with no destination configured. A deployed Inventory URL must be configured before enabling it. This gateway change does not deploy the service or add RabbitMQ/Order messaging.
 
 ## HTTP API
 
@@ -72,11 +89,17 @@ A reservation belongs to one positive integer `orderId`, matching Order's existi
 
 There is no payment or expiration step. A confirmed order can retain its allocation until cancellation calls release. Payment, shipping/fulfillment, automatic expiry and automatic changes to Order statuses are outside this standalone service. Released reservations are retained to prevent delayed retries from allocating again, including after restart.
 
-SQL transactions and update locks protect all stock writers, order uniqueness and multi-item reservations/releases. Database check constraints enforce valid quantity bounds. A failed transaction rolls back both the stock changes and reservation data. Automatic database retries are disabled so an adjustment is not silently repeated if a commit outcome is uncertain. Reservations/releases can be explicitly retried with the same order ID.
+EF-managed read-committed transactions keep multi-item reservations/releases atomic. All repository reads use LINQ; there are no handwritten locking queries. `InventoryItem` and `StockReservation` each have a SQL Server-generated eight-byte `RowVersion`, configured with EF's `IsRowVersion()`. EF checks the original version when updating/deleting a row and raises a concurrency exception if another request changed it. Database check constraints also enforce valid quantity bounds.
+
+A failed save rolls back both stock and reservation changes and clears EF tracking. The repository translates stale-version failures and concurrent duplicate-ID inserts into an application concurrency exception. The service reloads and retries the complete operation, up to five attempts; exhausted contention returns HTTP 409. Concurrent reservation/release replays also recheck the stored order outcome before rejecting already-allocated/released units.
+
+Only confirmed pre-commit conflicts are retried. Uncertain commit failures and unrelated database failures are not automatically replayed. Ordinary HTTP adjustments therefore still apply again if a caller submits them a second time. `RowVersion` is internal persistence metadata; HTTP request/response shapes are unchanged and do not implement client-provided version preconditions or ETags.
+
+The `AddRowVersion` migration adds the tokens to existing stock and reservation rows without resetting quantities or allocations. Startup applies this migration automatically. Migration preservation is covered by a test that upgrades a populated pre-RowVersion database.
 
 Catalog and Order IDs are references supplied by callers. Inventory has no foreign keys into either service's database, no shared entities, and no HTTP dependency on those services. It does not verify that their IDs exist. The relationship from `ReservationItems` to `Reservations` is internal to Inventory's own database. A Catalog product is initialized explicitly through Inventory's create endpoint.
 
-The API has the same deferred-auth scope as the other extracted service APIs. RabbitMQ, gateway routing, and automatic Order integration remain separate later tasks.
+The API has the same deferred-auth scope as the other extracted service APIs. Gateway routing is implemented; RabbitMQ and automatic Order integration remain separate later tasks.
 
 ## Tests
 
@@ -85,12 +108,16 @@ dotnet test tests/InventoryService.Tests/InventoryService.Tests.csproj
 dotnet test tests/IntegrationTests/IntegrationTests.csproj --filter 'FullyQualifiedName~Microsoft.eShopWeb.IntegrationTests.InventoryService'
 ```
 
-Unit tests require no database or broker. They cover initialization, setting quantities, increases/decreases, reservations, releases, insufficient stock, invalid inputs, overflow, and preserving quantities after a rejected change. Service tests substitute `IInventoryRepository` to verify allocation/release workflows, replay handling and rejected operations independently of EF Core.
+Unit tests require no database or broker. They cover initialization, setting quantities, increases/decreases, reservations, releases, insufficient stock, invalid inputs, overflow, and preserving quantities after a rejected change. Service tests substitute `IInventoryRepository` to verify allocation/release workflows, replay handling, rejected operations, safe conflict retries and uncertain-commit handling independently of EF Core.
 
 Inventory integration tests live in `tests/IntegrationTests/InventoryService`, alongside the existing Basket and Order repository tests in the shared `IntegrationTests` project. Run the command above for Inventory alone, or omit the filter to run all integration tests.
 
 Integration tests send real HTTP requests through `WebApplicationFactory` and use the real EF/SQL Server provider and migrations. They cover CRUD, adjustments, reservations/releases, replay after restart, concurrent orders and duplicate requests, database constraints, and rollback after both business rejection and forced SQL write failure. Each fixture creates a database named `InventoryTests_<random GUID>` and drops only that database afterward. SQL Server must be available; missing infrastructure fails the suite rather than skipping it.
 
+`InventoryGatewayIntegrationTests` additionally runs the actual gateway and Inventory apps in-process, connecting YARP's outgoing HTTP transport to Inventory's TestServer. It verifies create/read/adjust/reserve/replay/conflict/release/update/delete through the gateway against SQL Server. No Azure resources or external backend listeners are used.
+
+`InventoryConcurrencyTests` verifies generated/changing version tokens, stale stock updates/deletes, stale reservation writes, and migration of existing stock/reservations. Repository SQL statements in the production service have been removed; test-only SQL remains where a test deliberately constructs an old schema or database failure.
+
 Tests default to Windows-authenticated LocalDB. For another test SQL Server, set `INVENTORY_TEST_SQL` to a connection string for that server/account. The fixture always replaces its database name with a fresh test-owned name. Use an account allowed to create and drop test databases. No RabbitMQ connection is needed for these tests.
 
-The implementation was developed with failing stock-rule tests first, followed by failing HTTP tests, then the corresponding code. See the workspace's `InventoryServiceImplementationPlan.md` for recorded checkpoints and the later RabbitMQ phase.
+The implementation was developed with failing stock-rule tests first, followed by failing HTTP tests, then the corresponding code.
