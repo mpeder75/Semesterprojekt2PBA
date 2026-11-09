@@ -14,4 +14,5 @@ public interface IStockService
         int orderId, IReadOnlyCollection<ReservationItem> items, CancellationToken cancellationToken);
     Task<StockReservation> ConfirmAsync(int orderId, CancellationToken cancellationToken);
     Task<StockReservation> ReleaseAsync(int orderId, CancellationToken cancellationToken);
+    Task<StockReservation> ReleaseForCheckoutAsync(int orderId, CancellationToken cancellationToken);
 }

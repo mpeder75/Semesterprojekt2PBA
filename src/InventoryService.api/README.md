@@ -1,6 +1,6 @@
 # Inventory service
 
-Inventory owns stock quantities and order reservations in its own SQL Server database. It provides explicit creation, lookup, updating, adjustment, deletion, reservation and release through HTTP. The application starts independently of Catalog, Order and RabbitMQ.
+Inventory owns stock quantities and order reservations in its own SQL Server database. It provides stock operations through HTTP and handles checkout requests from Order through RabbitMQ when configured.
 
 ## Architecture
 
@@ -51,7 +51,7 @@ Use `https://localhost:7153/api/inventory` for the API operations below; the gat
 
 The shared flag defaults to false; disabled Inventory routes return 503 Problem Details and do not reach any backend. Restart the gateway after changing the flag. Enabled Inventory routes use the existing API rate limit (60 requests per minute per client), two-minute deadline, and an independent `inventory-service` circuit. A 409 business conflict does not open that circuit.
 
-Production keeps Inventory disabled with no destination configured. A deployed Inventory URL must be configured before enabling it. This gateway change does not deploy the service or add RabbitMQ/Order messaging.
+Production keeps Inventory routing disabled with no destination configured. Configure a deployed Inventory URL before enabling the route.
 
 ## HTTP API
 
@@ -102,7 +102,18 @@ The `AddRowVersion` migration adds the tokens to existing stock and reservation 
 
 Catalog and Order IDs are references supplied by callers. Inventory has no foreign keys into either service's database, no shared entities, and no HTTP dependency on those services. It does not verify that their IDs exist. The relationship from `ReservationItems` to `Reservations` is internal to Inventory's own database. A Catalog product is initialized explicitly through Inventory's create endpoint.
 
-The API has the same deferred-auth scope as the other extracted service APIs. Gateway routing is implemented; RabbitMQ and automatic Order integration remain separate later tasks.
+The API has the same deferred-auth scope as the other extracted service APIs.
+
+## RabbitMQ checkout
+
+Set `RabbitMQ__Uri` to the same broker and virtual host as OrderService to enable messaging. Leaving the setting empty runs the HTTP API on its own.
+
+- Inventory consumes `ReserveStock`, `ConfirmStockReservation`, and `ReleaseStockReservation` from `inventory.requests`. OrderService declares `order.checkout.replies`, where Inventory sends confirmed, persistent replies with the original checkout and correlation IDs.
+- `StockReservationRejected` always includes `reason`. An insufficient-stock reply also includes `shortages` with the first short product's `catalogItemId`, `requestedQuantity`, and `availableQuantity`.
+- A checkout release records the order as released even when its reservation has yet to arrive. A later reserve for that order is rejected. Repeated release replies are safe.
+- Before running checkout, set a RabbitMQ policy for queues matching `^inventory\.requests$` in the checkout virtual host. Set `dead-letter-exchange` to `eshop.checkout.dead` and `dead-letter-routing-key` to `inventory.requests`. Inventory creates the exchange and binds `checkout.dead`. This lets Order and Inventory declare the request queue with the same settings.
+
+Inventory acknowledges a request after RabbitMQ confirms its reply. It retries technical failures after 2, 5, and 15 seconds. Malformed requests and technical failures that exhaust retries go to the dead-letter queue when the broker policy is active.
 
 ## Tests
 

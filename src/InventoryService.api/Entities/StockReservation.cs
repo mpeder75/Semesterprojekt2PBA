@@ -24,6 +24,12 @@ public class StockReservation
         .Select(x => (x.CatalogItemId, x.Quantity))
         .SequenceEqual(other.Items.OrderBy(x => x.CatalogItemId).Select(x => (x.CatalogItemId, x.Quantity)));
 
+    public static StockReservation RecordEarlyRelease(int orderId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
+        return new StockReservation { OrderId = orderId, IsReleased = true };
+    }
+
     public void Confirm()
     {
         if (IsReleased)

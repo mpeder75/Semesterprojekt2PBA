@@ -62,6 +62,8 @@ public class StockService(IInventoryRepository repository) : IStockService
             var existing = await repository.GetReservationForUpdateAsync(orderId, cancellationToken);
             if (existing is not null)
             {
+                if (existing.IsReleased && existing.Items.Count == 0)
+                    throw new InventoryConflictException("This order was released before stock was reserved.");
                 if (!existing.Matches(requested))
                     throw new InventoryConflictException("This order already has a reservation with different items.");
                 // A delayed replay returns even a released reservation without allocating again.
@@ -72,7 +74,10 @@ public class StockService(IInventoryRepository repository) : IStockService
                 foreach (var line in requested.Items.OrderBy(x => x.CatalogItemId))
                 {
                     var stock = await RequireStockAsync(line.CatalogItemId, cancellationToken);
-                    ApplyStockRule(() => stock.Reserve(line.Quantity));
+                    if (stock.AvailableQuantity < line.Quantity)
+                        throw new InventoryConflictException("There is not enough available stock for this reservation.",
+                            new StockShortage(line.CatalogItemId, line.Quantity, stock.AvailableQuantity));
+                    stock.Reserve(line.Quantity);
                 }
             }
             catch (Exception error) when (error is InventoryConflictException or KeyNotFoundException)
@@ -99,13 +104,27 @@ public class StockService(IInventoryRepository repository) : IStockService
         }, cancellationToken);
     }
 
-    public Task<StockReservation> ReleaseAsync(int orderId, CancellationToken cancellationToken)
+    public Task<StockReservation> ReleaseAsync(int orderId, CancellationToken cancellationToken) =>
+        ReleaseAsync(orderId, recordMissing: false, cancellationToken);
+
+    public Task<StockReservation> ReleaseForCheckoutAsync(int orderId, CancellationToken cancellationToken) =>
+        ReleaseAsync(orderId, recordMissing: true, cancellationToken);
+
+    private Task<StockReservation> ReleaseAsync(int orderId, bool recordMissing, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
         return InTransactionAsync(async () =>
         {
-            var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken)
-                ?? throw new KeyNotFoundException("Reservation not found.");
+            var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken);
+            if (reservation is null)
+            {
+                if (!recordMissing)
+                    throw new KeyNotFoundException("Reservation not found.");
+
+                reservation = StockReservation.RecordEarlyRelease(orderId);
+                repository.AddReservation(reservation);
+                return reservation;
+            }
             if (reservation.IsReleased)
                 return reservation;
 
@@ -153,7 +172,7 @@ public class StockService(IInventoryRepository repository) : IStockService
                 // Disposal rolls back and clears tracking before the next attempt.
             }
         }
-        throw new InventoryConflictException("Inventory changed concurrently. Please retry the operation.");
+        throw new InventoryConflictException("Inventory changed concurrently. Please retry the operation.", retryable: true);
     }
 
     private static void ApplyStockRule(Action change)
