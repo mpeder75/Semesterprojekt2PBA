@@ -57,6 +57,22 @@ For example, these gateway App Settings override Production values:
 Double underscores separate configuration levels. Use the destination name
 `azure` for Production overrides and `local` for Development overrides.
 
+### Enable Inventory in Azure
+
+After Inventory is deployed and running, open the **gateway App Service** in
+Azure and add these values under **Environment variables → App settings**.
+
+| App setting | Value |
+| --- | --- |
+| `ReverseProxy__Clusters__inventory-service__Destinations__azure__Address` | The Inventory App Service's HTTPS URL from its Overview page, ending in `/` |
+| `FeatureManagement__UseInventoryService` | `true` |
+
+Apply both settings so the gateway starts with a valid destination when it reads
+the flag. Verify by requesting `GET /api/inventory/{catalogItemId}` through the
+gateway for a product with stock initialized in Inventory. Expect HTTP 200 and
+the stock quantities. Set the flag to `false` and apply if you need to disable
+the route.
+
 ## Routes and service flags
 
 Lower `Order` values take priority. Login POSTs match before general API/Web

@@ -1,0 +1,54 @@
+name: InventoryService
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/InventoryService.api/**'
+      - 'tests/InventoryService.Tests/**'
+      - '.github/workflows/inventory.yml'
+      - 'Directory.Packages.props'
+      - 'global.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROJECT: src/InventoryService.api/InventoryService.api.csproj
+  TEST_PROJECT: tests/InventoryService.Tests/InventoryService.Tests.csproj
+  AZURE_WEBAPP_NAME: app-eshop-inventory
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test "$TEST_PROJECT" --configuration Release
+      - name: Publish
+        run: dotnet publish "$PROJECT" --configuration Release --output ./publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inventory
+          path: ./publish
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: inventory
+          path: ./publish
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_INVENTORY_PUBLISH_PROFILE }}
+          package: ./publish

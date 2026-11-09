@@ -51,6 +51,11 @@ public class InventoryGatewayIntegrationTests(InventoryApiFactory inventory) : I
         Assert.Equal(HttpStatusCode.Conflict, invalid.StatusCode);
         using var reservation = await client.GetAsync("/api/inventory/reservations/42");
         Assert.Equal(HttpStatusCode.OK, reservation.StatusCode);
+        using var confirmed = await client.PostAsync("/api/inventory/reservations/42/confirm", null);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        Assert.Equal("Confirmed", (await confirmed.Content.ReadFromJsonAsync<Reservation>())!.Status);
+        Assert.Equal(new Stock(1, 12, 3, 9), await client.GetFromJsonAsync<Stock>("/api/inventory/1"));
+
         using var release = await client.PostAsync("/api/inventory/reservations/42/release", null);
         Assert.Equal(HttpStatusCode.OK, release.StatusCode);
         Assert.Equal(new Stock(1, 12, 0, 12), await client.GetFromJsonAsync<Stock>("/api/inventory/1"));
@@ -64,6 +69,7 @@ public class InventoryGatewayIntegrationTests(InventoryApiFactory inventory) : I
     }
 
     private sealed record Stock(int CatalogItemId, int Quantity, int ReservedQuantity, int AvailableQuantity);
+    private sealed record Reservation(string Status);
 
     private sealed class InventoryGatewayFactory : WebApplicationFactory<GatewayApi::Program>
     {
