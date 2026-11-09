@@ -3,19 +3,27 @@ using MinimalApi.Endpoint.Extensions;
 using OrderService.api.Consumers;
 using OrderService.api.Data;
 using OrderService.api.Interfaces;
+using OrderService.api.Producers;
+using OrderService.api.Services;
+using OrderService.api.Workers;
 using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// DbContext
 builder.Services.AddDbContext<OrderDbContext>(c =>
 {
     var connectionString = builder.Configuration.GetConnectionString("OrderConnection");
     c.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
 });
 
+// Repositories
+builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
+builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
+
+// RabbitMQ
 builder.Services.AddSingleton<IConnection>(_ =>
 {
     var factory = new ConnectionFactory
@@ -30,23 +38,22 @@ builder.Services.AddSingleton<IConnection>(_ =>
     return factory.CreateConnectionAsync().GetAwaiter().GetResult();
 });
 
-builder.Services.AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
-builder.Services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
+// Consumers
+builder.Services.AddHostedService<OrderCheckoutReplyConsumer>();
 
-// MessageHandlers
+// Workers
+builder.Services.AddHostedService<CheckoutDeadlineWorker>();
 
-// MessageDeserializers
+// Producers
+builder.Services.AddSingleton<ICheckoutRequestProducer, CheckoutRequestProducer>();
 
-// RabbitMQ
-builder.Services.AddHostedService<CreateOrderConsumer>();
-
+// Services
+builder.Services.AddScoped<CheckoutProcessManager>();
 builder.Services.AddEndpoints();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks().AddDbContextCheck<OrderDbContext>();
 
 var app = builder.Build();
-
-app.Logger.LogInformation("App created...");
-app.Logger.LogInformation("Seeding Database...");
 
 using (var scope = app.Services.CreateScope())
 {
@@ -70,7 +77,5 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
 app.MapEndpoints();
 app.Run();
