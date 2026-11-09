@@ -8,14 +8,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using global::InventoryService.api.Interfaces;
-using System.Collections.Generic;
 using Xunit;
 
 namespace Microsoft.eShopWeb.IntegrationTests.InventoryService;
@@ -30,7 +26,7 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
     public InventoryReservationTests(InventoryApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        _client = factory.CreateAdminClient();
     }
 
     private async Task<int> CreateStock(int quantity)
@@ -221,10 +217,8 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
         Assert.Equal("Confirmed", (await confirmed.Content.ReadFromJsonAsync<Reservation>())!.Status);
         await AssertStock(id, 10, 3);
 
-        await using var restarted = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:InventoryConnection"] = _factory.ConnectionString })));
-        using var client = restarted.CreateClient();
+        await using var restarted = _factory.WithWebHostBuilder(_ => { });
+        using var client = InventoryApiFactory.CreateAdminClient(restarted);
         var stored = await client.GetFromJsonAsync<Reservation>(reservationUrl);
         Assert.Equal("Confirmed", stored!.Status);
 
@@ -248,10 +242,8 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
         var order = NextId();
         Assert.Equal(HttpStatusCode.Created, (await Reserve(order, (id, 3))).StatusCode);
 
-        await using var restarted = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:InventoryConnection"] = _factory.ConnectionString })));
-        using var client = restarted.CreateClient();
+        await using var restarted = _factory.WithWebHostBuilder(_ => { });
+        using var client = InventoryApiFactory.CreateAdminClient(restarted);
         var reservation = await client.GetFromJsonAsync<Reservation>($"/api/inventory/reservations/{order}");
         Assert.Equal("Reserved", reservation!.Status);
         var retry = await client.PostAsJsonAsync("/api/inventory/reservations", new

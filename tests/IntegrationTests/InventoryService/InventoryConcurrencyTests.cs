@@ -25,7 +25,7 @@ public class InventoryConcurrencyTests(InventoryApiFactory factory) : IClassFixt
     private async Task<int> CreateStock()
     {
         var id = Interlocked.Increment(ref _nextId);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         using var response = await client.PostAsJsonAsync("/api/inventory", new { catalogItemId = id, quantity = 10 });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return id;
@@ -87,7 +87,7 @@ public class InventoryConcurrencyTests(InventoryApiFactory factory) : IClassFixt
     {
         var id = await CreateStock();
         var order = Interlocked.Increment(ref _nextId);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAdminClient();
         using var reserved = await client.PostAsJsonAsync("/api/inventory/reservations", new
         {
             orderId = order, items = new[] { new { catalogItemId = id, quantity = 3 } }

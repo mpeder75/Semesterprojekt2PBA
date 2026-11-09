@@ -31,7 +31,12 @@ public class InventoryGatewayIntegrationTests(InventoryApiFactory inventory) : I
             BaseAddress = new Uri("http://localhost"), AllowAutoRedirect = false
         });
 
-        using var created = await client.PostAsJsonAsync("/api/inventory", new { catalogItemId = 1, quantity = 10 });
+        var createRequest = new { catalogItemId = 1, quantity = 10 };
+        using var unauthorized = await client.PostAsJsonAsync("/api/inventory", createRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = InventoryApiFactory.CreateAuthorization("Administrators");
+        using var created = await client.PostAsJsonAsync("/api/inventory", createRequest);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         Assert.Equal("/api/inventory/1", created.Headers.Location?.ToString());
 

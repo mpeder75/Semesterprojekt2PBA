@@ -22,6 +22,7 @@ public partial class List : BlazorComponent
     private List<CatalogBrand> catalogBrands = new List<CatalogBrand>();
 
     private Edit EditComponent { get; set; }
+    private ManageStock ManageStockComponent { get; set; }
     private Delete DeleteComponent { get; set; }
     private Details DetailsComponent { get; set; }
     private Create CreateComponent { get; set; }

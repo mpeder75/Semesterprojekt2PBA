@@ -8,6 +8,8 @@ namespace InventoryService.api.Endpoints;
 
 public static class InventoryEndpoints
 {
+    public const string AdminPolicy = "InventoryAdmin";
+
     public static void MapInventoryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/inventory").WithTags("Inventory");
@@ -20,18 +22,19 @@ public static class InventoryEndpoints
             catch (OverflowException) { return Results.BadRequest("The stock quantity exceeds the supported integer range."); }
         });
 
+        var writes = group.MapGroup("").RequireAuthorization(AdminPolicy);
         var routes = new[]
         {
             group.MapGet("/{catalogItemId:int}", GetAsync).Produces<StockResponse>(),
-            group.MapPost("", CreateAsync).Produces<StockResponse>(StatusCodes.Status201Created),
-            group.MapPut("/{catalogItemId:int}", SetAsync).Produces<StockResponse>(),
-            group.MapPost("/{catalogItemId:int}/adjustments", AdjustAsync).Produces<StockResponse>(),
-            group.MapDelete("/{catalogItemId:int}", DeleteAsync).Produces(StatusCodes.Status204NoContent),
-            group.MapPost("/reservations", ReserveAsync)
+            writes.MapPost("", CreateAsync).Produces<StockResponse>(StatusCodes.Status201Created),
+            writes.MapPut("/{catalogItemId:int}", SetAsync).Produces<StockResponse>(),
+            writes.MapPost("/{catalogItemId:int}/adjustments", AdjustAsync).Produces<StockResponse>(),
+            writes.MapDelete("/{catalogItemId:int}", DeleteAsync).Produces(StatusCodes.Status204NoContent),
+            writes.MapPost("/reservations", ReserveAsync)
                 .Produces<ReservationResponse>(StatusCodes.Status201Created).Produces<ReservationResponse>(),
             group.MapGet("/reservations/{orderId:int}", GetReservationAsync).Produces<ReservationResponse>(),
-            group.MapPost("/reservations/{orderId:int}/confirm", ConfirmAsync).Produces<ReservationResponse>(),
-            group.MapPost("/reservations/{orderId:int}/release", ReleaseAsync).Produces<ReservationResponse>()
+            writes.MapPost("/reservations/{orderId:int}/confirm", ConfirmAsync).Produces<ReservationResponse>(),
+            writes.MapPost("/reservations/{orderId:int}/release", ReleaseAsync).Produces<ReservationResponse>()
         };
         foreach (var route in routes)
             route.Produces(StatusCodes.Status400BadRequest).Produces(StatusCodes.Status404NotFound)

@@ -2,17 +2,24 @@
 
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
 namespace Microsoft.eShopWeb.IntegrationTests.InventoryService;
 
 public sealed class InventoryApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    private static readonly byte[] SigningKey = RandomNumberGenerator.GetBytes(32);
     private readonly string _databaseName = $"InventoryTests_{Guid.NewGuid():N}";
     public string ConnectionString { get; }
 
@@ -34,8 +41,36 @@ public sealed class InventoryApiFactory : WebApplicationFactory<Program>, IAsync
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:InventoryConnection"] = ConnectionString,
+                ["Authentication:JwtSigningKey"] = Convert.ToBase64String(SigningKey),
                 ["Logging:LogLevel:Default"] = "Warning"
             }));
+    }
+
+    internal HttpClient CreateAdminClient() => CreateAdminClient(this);
+
+    internal static HttpClient CreateAdminClient(WebApplicationFactory<Program> application)
+    {
+        var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = CreateAuthorization("Administrators");
+        return client;
+    }
+
+    internal static AuthenticationHeaderValue CreateAuthorization(string role, bool validSignature = true)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.Name, "inventory-test-user"),
+                new Claim(ClaimTypes.Role, role)
+            }),
+            Expires = DateTime.UtcNow.AddMinutes(10),
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(validSignature ? SigningKey : RandomNumberGenerator.GetBytes(32)),
+                SecurityAlgorithms.HmacSha256Signature)
+        });
+        return new AuthenticationHeaderValue("Bearer", handler.WriteToken(token));
     }
 
     public async Task InitializeAsync()

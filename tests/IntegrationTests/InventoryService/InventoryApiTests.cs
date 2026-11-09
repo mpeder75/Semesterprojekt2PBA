@@ -1,17 +1,13 @@
 #nullable enable
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace Microsoft.eShopWeb.IntegrationTests.InventoryService;
@@ -24,7 +20,7 @@ public class InventoryApiTests : IClassFixture<InventoryApiFactory>, IDisposable
     public InventoryApiTests(InventoryApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        _client = factory.CreateAdminClient();
     }
 
     [Fact]
@@ -41,7 +37,44 @@ public class InventoryApiTests : IClassFixture<InventoryApiFactory>, IDisposable
 
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         Assert.Equal(new StockResponse(1, 7), await updated.Content.ReadFromJsonAsync<StockResponse>());
-        Assert.Equal(new StockResponse(1, 7), await _client.GetFromJsonAsync<StockResponse>("/api/inventory/1"));
+        using var anonymousClient = _factory.CreateClient();
+        Assert.Equal(new StockResponse(1, 7), await anonymousClient.GetFromJsonAsync<StockResponse>("/api/inventory/1"));
+    }
+
+    [Theory]
+    [InlineData(null, true, HttpStatusCode.Unauthorized)]
+    [InlineData("Customers", true, HttpStatusCode.Forbidden)]
+    [InlineData("Administrators", false, HttpStatusCode.Unauthorized)]
+    public async Task InventoryWrites_RequireATrustedAdministrator(
+        string? role, bool validSignature, HttpStatusCode expectedStatus)
+    {
+        using var client = _factory.CreateClient();
+        if (role is not null)
+            client.DefaultRequestHeaders.Authorization = InventoryApiFactory.CreateAuthorization(role, validSignature);
+
+        var requests = new (HttpMethod Method, string Path, object? Body)[]
+        {
+            (HttpMethod.Post, "/api/inventory", new { catalogItemId = 900, quantity = 10 }),
+            (HttpMethod.Put, "/api/inventory/900", new { quantity = 12 }),
+            (HttpMethod.Post, "/api/inventory/900/adjustments", new { quantityChange = 2 }),
+            (HttpMethod.Delete, "/api/inventory/900", null),
+            (HttpMethod.Post, "/api/inventory/reservations", new
+            {
+                orderId = 900, items = new[] { new { catalogItemId = 900, quantity = 3 } }
+            }),
+            (HttpMethod.Post, "/api/inventory/reservations/900/confirm", null),
+            (HttpMethod.Post, "/api/inventory/reservations/900/release", null)
+        };
+
+        foreach (var (method, path, body) in requests)
+        {
+            using var request = new HttpRequestMessage(method, path);
+            if (body is not null)
+                request.Content = JsonContent.Create(body);
+
+            using var response = await client.SendAsync(request);
+            Assert.Equal(expectedStatus, response.StatusCode);
+        }
     }
 
     [Theory]
@@ -126,9 +159,7 @@ public class InventoryApiTests : IClassFixture<InventoryApiFactory>, IDisposable
         Assert.Equal(HttpStatusCode.Created,
             (await _client.PostAsJsonAsync("/api/inventory", new { catalogItemId = 6, quantity = 8 })).StatusCode);
 
-        await using var restarted = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:InventoryConnection"] = _factory.ConnectionString })));
+        await using var restarted = _factory.WithWebHostBuilder(_ => { });
         using var client = restarted.CreateClient();
 
         Assert.Equal(new StockResponse(6, 8), await client.GetFromJsonAsync<StockResponse>("/api/inventory/6"));

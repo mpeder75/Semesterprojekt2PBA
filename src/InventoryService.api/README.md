@@ -53,7 +53,26 @@ The shared flag defaults to false; disabled Inventory routes return 503 Problem 
 
 Production keeps Inventory routing disabled with no destination configured. Configure a deployed Inventory URL before enabling the route.
 
+## Manage stock in the admin UI
+
+Sign in to `/admin` as an administrator and select **Manage stock** next to a
+catalog product. The dialog shows on-hand, reserved, and available units. It
+can initialize missing stock, change the on-hand quantity, and delete an empty
+stock record. The browser sends these requests through the gateway.
+
+Set `Authentication__JwtSigningKey` to the same secret in Web and Inventory.
+Generate a random key of at least 32 bytes and store it as Base64. If the
+legacy PublicApi is deployed and validates Web's tokens, give it the same
+setting so existing admin calls still work. Keep the key in server settings.
+For a fresh identity database, Web can create the admin account using
+`Authentication__SeedAdminPassword`. For an existing admin account, change
+the original demo password through the account settings before managing stock.
+
 ## HTTP API
+
+Stock and reservation reads are public. HTTP writes require a signed bearer
+token for the `Administrators` role. Inventory returns `401` for missing or
+invalid credentials and `403` for a valid token without the role.
 
 | Request | Behavior |
 | --- | --- |
@@ -73,13 +92,15 @@ Product/order IDs must be positive integers. Initial/set quantity is required an
 
 HTTP contracts are separate models in `Models/Requests` and `Models/Responses`. Response models are DTOs; endpoints map the internal entities to them.
 
-Example:
+For a direct HTTP check, use the admin token returned by Web's `/User` endpoint
+in the signed-in session as `$adminToken`.
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory' -ContentType 'application/json' -Body '{"catalogItemId":1,"quantity":10}'
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations' -ContentType 'application/json' -Body '{"orderId":42,"items":[{"catalogItemId":1,"quantity":3}]}'
+$inventoryHeaders = @{ Authorization = "Bearer $adminToken" }
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory' -Headers $inventoryHeaders -ContentType 'application/json' -Body '{"catalogItemId":1,"quantity":10}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations' -Headers $inventoryHeaders -ContentType 'application/json' -Body '{"orderId":42,"items":[{"catalogItemId":1,"quantity":3}]}'
 Invoke-RestMethod -Uri 'http://localhost:57967/api/inventory/1'
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations/42/release'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations/42/release' -Headers $inventoryHeaders
 ```
 
 `POST` creates a stock record; `PUT` only updates an existing record. Both setting and decreasing stock protect reserved units. Explicit adjustments are ordinary non-idempotent HTTP operations: sending the same adjustment twice applies it twice. Use order reservations for allocation, rather than also deducting the same order through adjustments.
@@ -101,8 +122,6 @@ Only confirmed pre-commit conflicts are retried. Uncertain commit failures and u
 The `AddRowVersion` migration adds the tokens to existing stock and reservation rows without resetting quantities or allocations. Startup applies this migration automatically. Migration preservation is covered by a test that upgrades a populated pre-RowVersion database.
 
 Catalog and Order IDs are references supplied by callers. Inventory has no foreign keys into either service's database, no shared entities, and no HTTP dependency on those services. It does not verify that their IDs exist. The relationship from `ReservationItems` to `Reservations` is internal to Inventory's own database. A Catalog product is initialized explicitly through Inventory's create endpoint.
-
-The API has the same deferred-auth scope as the other extracted service APIs.
 
 ## RabbitMQ checkout
 

@@ -24,6 +24,7 @@ builder.Services.AddScoped(sp => new HttpClient() { BaseAddress = new Uri(builde
 
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<HttpService>();
+builder.Services.AddScoped<InventoryStockService>();
 
 builder.Services.AddBlazoredLocalStorage();
 
