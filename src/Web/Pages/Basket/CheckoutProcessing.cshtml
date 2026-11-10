@@ -1,0 +1,77 @@
+@page "{checkoutId:guid}"
+@model CheckoutProcessingModel
+@{
+    ViewData["Title"] = "Processing your order";
+}
+
+<section class="esh-catalog-hero">
+    <div class="container">
+        <img class="esh-catalog-title" src="~/images/main_banner_text.png" />
+    </div>
+</section>
+
+<div class="container">
+    <h1 id="checkout-heading">We are processing your order...</h1>
+
+    <p id="checkout-message">Please wait. This page updates by itself.</p>
+    <p id="checkout-slow" style="display:none">This is taking longer than usual. Your order is still being processed.</p>
+
+    <p id="checkout-links" style="display:none">
+        <a id="checkout-link-shop" asp-page="/Index">Continue Shopping...</a>
+        <a id="checkout-link-basket" asp-page="/Basket/Index" style="display:none">Back to basket</a>
+    </p>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var statusUrl = '@Url.Page("CheckoutProcessing", "Status", new { checkoutId = Model.CheckoutId })';
+            var startedAt = Date.now();
+            var initial = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Checkout));
+
+            var heading = document.getElementById('checkout-heading');
+            var message = document.getElementById('checkout-message');
+            var slow = document.getElementById('checkout-slow');
+            var links = document.getElementById('checkout-links');
+            var basketLink = document.getElementById('checkout-link-basket');
+
+            function finish(status) {
+                slow.style.display = 'none';
+                links.style.display = '';
+                if (status.status === 'Completed') {
+                    heading.textContent = 'Thanks for your Order!';
+                    message.textContent = status.orderId ? 'Your order number is ' + status.orderId + '.' : 'Your order is confirmed.';
+                } else {
+                    heading.textContent = 'We could not complete your order';
+                    message.textContent = 'Your basket has not been changed. ' + (status.failureReason || '');
+                    basketLink.style.display = '';
+                }
+            }
+
+            function nextDelay() {
+                // Hvert 2. sekund de første 30 sekunder, derefter hvert 5.
+                return Date.now() - startedAt < 30000 ? 2000 : 5000;
+            }
+
+            function poll() {
+                fetch(statusUrl, { headers: { 'Accept': 'application/json' } })
+                    .then(function (response) { return response.ok ? response.json() : null; })
+                    .then(function (status) {
+                        if (status && (status.status === 'Completed' || status.status === 'Failed')) {
+                            finish(status);
+                            return;
+                        }
+                        if (Date.now() - startedAt >= 30000) { slow.style.display = ''; }
+                        setTimeout(poll, nextDelay());
+                    })
+                    .catch(function () { setTimeout(poll, nextDelay()); });
+            }
+
+            if (initial && (initial.status === 'Completed' || initial.status === 'Failed')) {
+                finish(initial);
+            } else {
+                setTimeout(poll, 2000);
+            }
+        })();
+    </script>
+}
