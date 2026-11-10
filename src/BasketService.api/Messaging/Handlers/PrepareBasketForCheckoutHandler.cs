@@ -23,10 +23,7 @@ public class PrepareBasketForCheckoutHandler : IBasketMessageHandler<PrepareBask
 
             return new BasketPrepared(preparedBasket);
         }
-        catch (Exception ex) when (
-        ex is UnauthorizedAccessException 
-        ||
-        ex is InvalidOperationException)
+        catch (Exception ex)
         {
             return new BasketPreparationRejected(ex.Message);
         }

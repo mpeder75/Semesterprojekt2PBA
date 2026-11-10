@@ -2,5 +2,5 @@
 
 namespace BasketService.api.Messaging.Replies;
 
-public sealed record BasketPreparationRejected(string reply) : IBasketReply<string>;
+public sealed record BasketPreparationRejected(string reason) : IBasketReply<string>;
 

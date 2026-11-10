@@ -115,7 +115,7 @@ public class BasketService : IBasketService
 
         foreach (var item in basket.Items) 
         {
-            BasketPreparedDTO itemDTO = new BasketPreparedDTO(item.id, item.Quantity);
+            BasketPreparedDTO itemDTO = new BasketPreparedDTO(item.CatalogItemId, item.Quantity);
             itemDTOs.Add(itemDTO);
         }
 
