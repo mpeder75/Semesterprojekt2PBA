@@ -62,8 +62,8 @@ builder.Services.AddScoped(typeof(IAppLogger<>), typeof(LoggerAdapter<>));
 builder.Services.AddSingleton<CatalogMessageRegistry>();
 
 //MessageHandlers
-builder.Services.AddScoped<ICatalogMessageHandler<GetCatalogItemsByIdsAsyncMessage, GetCatalogItemsByIdsAsyncReply>, GetCatalogItemsByIdsAsyncHandler>();
-builder.Services.AddScoped<ICatalogReplyHandlerAdapter, CatalogReplyHandlerAdapter<GetCatalogItemsByIdsAsyncMessage, GetCatalogItemsByIdsAsyncReply>>();
+builder.Services.AddScoped<ICatalogMessageHandler<GetCatalogItemsByIdsMessage, CatalogItemsReturned>, GetCatalogItemsByIdsHandler>();
+builder.Services.AddScoped<ICatalogReplyHandlerAdapter, CatalogReplyHandlerAdapter<GetCatalogItemsByIdsMessage, CatalogItemsReturned>>();
 
 //MessageDispatcher
 builder.Services.AddSingleton<ICatalogMessageDispatcher, CatalogMessageDispatcher>();

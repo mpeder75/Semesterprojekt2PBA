@@ -1,4 +1,5 @@
-﻿using CatalogService.api.Entities;
+﻿using CatalogService.api.DTOs;
+using CatalogService.api.Entities;
 using CatalogService.api.Interfaces;
 using CatalogService.api.Specification;
 
@@ -13,10 +14,16 @@ public class CatalogService : ICatalogService
         _catalogRepository = catalogRepository;
     }
 
-    public async Task<List<CatalogItem>> GetCatalogItemsByIdAsync(int[] catalogItemIds)
+    public async Task<List<CatalogItemDTO>> GetCatalogItemsById(int[] catalogItemIds)
     {
         CatalogItemsSpecification itemsSpecification = new CatalogItemsSpecification(catalogItemIds);
         List<CatalogItem> items = await _catalogRepository.ListAsync(itemsSpecification);
-        return items;
+        List<CatalogItemDTO> dTOs = new List<CatalogItemDTO>();
+        foreach (CatalogItem item in items) 
+        {
+            CatalogItemDTO dto = new CatalogItemDTO(item.Id, item.Name, item.Price, item.PictureUri);
+            dTOs.Add(dto);
+        }
+        return dTOs;
     }
 }

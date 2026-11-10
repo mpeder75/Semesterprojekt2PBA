@@ -2,6 +2,6 @@
 
 namespace CatalogService.api.Messaging.Messages;
 
-public sealed record GetCatalogItemsByIdsAsyncMessage(
+public sealed record GetCatalogItemsByIdsMessage(
     int[] catalogItemIds) : ICatalogMessage;
 

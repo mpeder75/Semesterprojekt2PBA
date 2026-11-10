@@ -1,8 +1,8 @@
-﻿using CatalogService.api.Entities;
+﻿using CatalogService.api.DTOs;
 
 namespace CatalogService.api.Interfaces;
 
 public interface ICatalogService
 {
-    Task<List<CatalogItem>> GetCatalogItemsByIdAsync(int[] ids);
+    Task<List<CatalogItemDTO>> GetCatalogItemsById(int[] ids);
 }
