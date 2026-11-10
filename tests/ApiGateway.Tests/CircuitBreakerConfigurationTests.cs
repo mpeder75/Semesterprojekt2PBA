@@ -32,8 +32,12 @@ public sealed class CircuitBreakerConfigurationTests
         var error = Assert.ThrowsAny<Exception>(() => factory.CreateGatewayClient());
         var details = error.ToString();
 
-        Assert.Contains(nameof(OptionsValidationException), details);
-        Assert.Contains($"CircuitBreaker:{setting}", details);
+        // Pass the full exception text as the failure message: xUnit shortens a string in Assert.Contains, which
+        // hid the real cause when this test failed on CI.
+        Assert.True(details.Contains(nameof(OptionsValidationException)),
+            $"Expected {nameof(OptionsValidationException)} for {setting}={value}, but got:{Environment.NewLine}{details}");
+        Assert.True(details.Contains($"CircuitBreaker:{setting}"),
+            $"Expected the message to name CircuitBreaker:{setting}, but got:{Environment.NewLine}{details}");
     }
 
     [Theory]
