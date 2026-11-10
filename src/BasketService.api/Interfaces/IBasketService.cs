@@ -1,5 +1,6 @@
 ﻿using Ardalis.Result;
 using BasketService.api.Entities.BasketAggregate;
+using BasketService.api.Entities.DTOs;
 
 namespace BasketService.api.Interfaces;
 
@@ -10,4 +11,6 @@ public interface IBasketService
     Task<Result<Basket>> SetQuantities(int basketId, Dictionary<string, int> quantities);
     Task<bool> DeleteBasketAsync(int basketId);
     Task<Basket> GetBasketByIdAsync(int basketId);
+    Task<List<BasketPreparedDTO>> PrepareBasket(int basketId, string buyerId);
+    Task<EmptyDto> CompleteBasketCheckout(int basketId, string buyerId, int orderId);
 }
