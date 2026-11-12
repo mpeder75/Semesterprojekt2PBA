@@ -40,8 +40,18 @@ public sealed class InventoryCheckoutHandler(IStockService stock)
 
     private async Task<(string, object)> ReserveAsync(ReserveStockPayload payload, CancellationToken cancellationToken)
     {
-        if (payload.Items is not { Length: > 0 } || payload.Items.Any(item => item is null))
-            throw new JsonException("A stock reservation requires product lines.");
+        if (payload.OrderId <= 0 || payload.Items is not { Length: > 0 }
+            || payload.Items.Any(item => item is null || item.CatalogItemId <= 0 || item.Quantity <= 0))
+        {
+            return ("StockReservationRejected", new StockRejectedPayload(
+                "A positive order ID and at least one product with a positive quantity are required."));
+        }
+
+        if (payload.Items.Select(item => item!.CatalogItemId).Distinct().Count() != payload.Items.Length)
+        {
+            return ("StockReservationRejected", new StockRejectedPayload(
+                "Each product must be listed once in a stock reservation."));
+        }
 
         var items = payload.Items.Select(item => new ReservationItem(item!.CatalogItemId, item.Quantity)).ToArray();
         try

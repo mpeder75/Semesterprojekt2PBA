@@ -129,10 +129,14 @@ Set `RabbitMQ__Uri` to the same broker and virtual host as OrderService to enabl
 
 - Inventory consumes `ReserveStock`, `ConfirmStockReservation`, and `ReleaseStockReservation` from `inventory.requests`. OrderService declares `order.checkout.replies`, where Inventory sends confirmed, persistent replies with the original checkout and correlation IDs.
 - `StockReservationRejected` always includes `reason`. An insufficient-stock reply also includes `shortages` with the first short product's `catalogItemId`, `requestedQuantity`, and `availableQuantity`.
+- A readable reservation request with invalid order/product IDs, non-positive quantities, duplicate products, or missing lines returns `StockReservationRejected`. Invalid JSON shapes, unsupported message types, and invalid envelopes follow dead-letter handling.
 - A checkout release records the order as released even when its reservation has yet to arrive. A later reserve for that order is rejected. Repeated release replies are safe.
-- Before running checkout, set a RabbitMQ policy for queues matching `^inventory\.requests$` in the checkout virtual host. Set `dead-letter-exchange` to `eshop.checkout.dead` and `dead-letter-routing-key` to `inventory.requests`. Inventory creates the exchange and binds `checkout.dead`. This lets Order and Inventory declare the request queue with the same settings.
+- Before running checkout, set a RabbitMQ policy for queues matching `^inventory\.requests$` in the checkout virtual host. Set `dead-letter-exchange` to `eshop.checkout.dead` and `dead-letter-routing-key` to `inventory.requests`. Inventory creates the exchange and binds `inventory.requests.dead`. This lets Order and Inventory declare the request queue with the same settings.
+- When upgrading an existing broker, preserve any messages in `checkout.dead`. Remove its old binding from `eshop.checkout.dead` with routing key `inventory.requests` once all Inventory instances use the new queue, so future failed Inventory requests route only to `inventory.requests.dead`.
 
 Inventory acknowledges a request after RabbitMQ confirms its reply. It retries technical failures after 2, 5, and 15 seconds. Malformed requests and technical failures that exhaust retries go to the dead-letter queue when the broker policy is active.
+
+This adapter does not yet implement the group checkout plan's durable inbox/outbox handoffs, persisted retry budget, reservation status query, or release-rejection replies. Renaming the failed-request queue does not complete those recovery requirements.
 
 ## Tests
 
