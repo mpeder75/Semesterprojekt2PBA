@@ -25,6 +25,7 @@ public class CheckoutProcessManager
     private readonly IRepository<Order> _orderRepository;
     private readonly ICheckoutRequestProducer _producer;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan StockRecoveryInterval = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Modtager de afhængigheder, manageren bruger. De leveres af .NET (dependency injection).
@@ -140,16 +141,39 @@ public class CheckoutProcessManager
 
         var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkoutId));
 
-        if (order is not null)
-        {
-            order.Reject();
-            await _orderRepository.UpdateAsync(order);
-        }
+        if (order?.Status == OrderStatus.Confirmed)
+            return;
+
+        order?.Reject();
 
         var nextState = order is null ? CheckoutState.ReleasingBasket : CheckoutState.ReleasingStock;
 
+        // The scoped repositories share a DbContext, so the tracked order and checkout are saved together.
         await FailAsync(checkout, "Checkout timed out", nextState);
         await AdvanceOrderAsync(checkoutId);
+    }
+
+    public async Task ReconcileStockReleaseAsync(Guid checkoutId, DateTimeOffset now)
+    {
+        var checkout = await _repository.FirstOrDefaultAsync(new CheckoutProcessByCheckoutIdSpec(checkoutId));
+        if (checkout is null || checkout.State != CheckoutState.ReleasingStock || checkout.StockRecoveryDueAt > now)
+            return;
+
+        var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkoutId));
+        if (order is null || order.Status == OrderStatus.Confirmed)
+        {
+            await MarkStockReleaseConflictAsync(checkout);
+            return;
+        }
+
+        var correlationId = Guid.NewGuid();
+        checkout.ExpectReply(correlationId);
+        checkout.MarkStockRecoveryRetrying();
+        checkout.ScheduleStockRecovery(now.Add(StockRecoveryInterval));
+        await _repository.UpdateAsync(checkout);
+
+        await _producer.SendAsync(CheckoutQueues.Inventory, "GetStockReservationStatus",
+            checkoutId, correlationId, new GetStockReservationStatusPayload(order.Id));
     }
 
     /// <summary>
@@ -160,11 +184,10 @@ public class CheckoutProcessManager
     /// (gammelt eller dobbelt svar). Derefter vælges handling efter MessageType:
     /// BasketPrepared, BasketPreparationRejected, CatalogItemsReturned, CatalogLookupRejected, StockReserved,
     /// StockReservationRejected, StockReservationConfirmed, StockConfirmationRejected, BasketCheckoutCompleted,
-    /// StockReservationReleased og BasketCheckoutReleased.
+    /// StockReservationReleased, StockReservationStatusReturned, StockReleaseRejected og BasketCheckoutReleased.
     /// Afviser Basket forberedelsen (BasketPreparationRejected), går checkouten direkte til Failed, for intet er låst.
     /// Afviser Catalog opslaget (CatalogLookupRejected), frigives kurven (ReleasingBasket), for den er allerede låst.
-    /// Ukendte svar ignoreres. En afvisning af oprydningen (Complete/Release) ignoreres også, så checkouten bliver
-    /// stående i sin tilstand og kan forsøges igen ved at køre AdvanceOrderAsync.
+    /// Ved en afvist lagerfrigivelse gemmes NeedsAttention, og lagerstatus undersøges af baggrundsjobbet.
     /// </remarks>
     public async Task HandleReplyAsync(CheckoutMessageEnvelope envelope)
     {
@@ -182,7 +205,7 @@ public class CheckoutProcessManager
 
         switch (envelope.MessageType)
         {
-            case "BasketPrepared":
+            case "BasketPrepared" when checkout.State == CheckoutState.AwaitingBasket:
                 var payloadBasket = envelope.Payload.Deserialize<BasketPreparedPayload>(JsonOptions);
 
                 if (payloadBasket is null)
@@ -199,7 +222,7 @@ public class CheckoutProcessManager
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "CatalogItemsReturned":
+            case "CatalogItemsReturned" when checkout.State == CheckoutState.AwaitingCatalog:
                 var payloadCatalog = envelope.Payload.Deserialize<CatalogItemsReturnedPayload>(JsonOptions);
 
                 if (payloadCatalog is null)
@@ -227,7 +250,7 @@ public class CheckoutProcessManager
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "StockReserved":
+            case "StockReserved" when checkout.State == CheckoutState.AwaitingStockReservation:
                 var stockReserved = envelope.Payload.Deserialize<StockReservedPayload>(JsonOptions);
 
                 if (stockReserved is null)
@@ -241,7 +264,7 @@ public class CheckoutProcessManager
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "StockReservationConfirmed":
+            case "StockReservationConfirmed" when checkout.State == CheckoutState.AwaitingStockConfirmation:
                 var stockReservationConfirmed = envelope.Payload.Deserialize<StockReservationConfirmedPayload>(JsonOptions);
 
                 if (stockReservationConfirmed is null)
@@ -251,20 +274,19 @@ public class CheckoutProcessManager
 
                 var confirmedOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
 
-                if (confirmedOrder is null)
+                if (confirmedOrder?.Status != OrderStatus.PendingInventory)
                 {
                     return;
                 }
 
                 confirmedOrder.Confirm();
-                await _orderRepository.UpdateAsync(confirmedOrder);
 
                 checkout.MoveTo(CheckoutState.OrderConfirmedCleanupPending);
                 await _repository.UpdateAsync(checkout);
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "StockReservationRejected":
+            case "StockReservationRejected" when checkout.State == CheckoutState.AwaitingStockReservation:
                 var stockReservationRejected = envelope.Payload.Deserialize<StockReservationRejectedPayload>(JsonOptions);
 
                 if (stockReservationRejected is null)
@@ -274,17 +296,18 @@ public class CheckoutProcessManager
 
                 var rejectedOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
 
-                if (rejectedOrder is not null)
-                {
-                    rejectedOrder.Reject();
-                    await _orderRepository.UpdateAsync(rejectedOrder);
-                }
+                if (rejectedOrder?.Status == OrderStatus.Confirmed)
+                    return;
+                rejectedOrder?.Reject();
 
-                await FailAsync(checkout, $"Stock reservation failed: {stockReservationRejected.Reason}", CheckoutState.ReleasingBasket);
+                var releaseState = stockReservationRejected.Code is "CheckoutBindingMismatch" or "ReservationItemsMismatch"
+                    ? CheckoutState.ReleasingStock
+                    : CheckoutState.ReleasingBasket;
+                await FailAsync(checkout, $"Stock reservation failed: {stockReservationRejected.Reason}", releaseState);
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "StockConfirmationRejected":
+            case "StockConfirmationRejected" when checkout.State == CheckoutState.AwaitingStockConfirmation:
                 var stockConfirmationRejected = envelope.Payload.Deserialize<StockConfirmationRejectedPayload>(JsonOptions);
 
                 if (stockConfirmationRejected is null)
@@ -294,17 +317,15 @@ public class CheckoutProcessManager
 
                 var rejectedConfirmOrder = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
 
-                if (rejectedConfirmOrder is not null)
-                {
-                    rejectedConfirmOrder.Reject();
-                    await _orderRepository.UpdateAsync(rejectedConfirmOrder);
-                }
+                if (rejectedConfirmOrder?.Status == OrderStatus.Confirmed)
+                    return;
+                rejectedConfirmOrder?.Reject();
 
                 await FailAsync(checkout, $"Stock confirmation failed: {stockConfirmationRejected.Reason}", CheckoutState.ReleasingStock);
                 await AdvanceOrderAsync(checkout.CheckoutId);
                 break;
 
-            case "BasketCheckoutCompleted":
+            case "BasketCheckoutCompleted" when checkout.State == CheckoutState.OrderConfirmedCleanupPending:
                 var basketCompleted = envelope.Payload.Deserialize<BasketCheckoutCompletedPayload>(JsonOptions);
 
                 if (basketCompleted is null)
@@ -316,20 +337,18 @@ public class CheckoutProcessManager
                 await _repository.UpdateAsync(checkout);
                 break;
 
-            case "StockReservationReleased":
-                var stockReleased = envelope.Payload.Deserialize<StockReservationReleasedPayload>(JsonOptions);
-
-                if (stockReleased is null)
-                {
-                    return;
-                }
-
-                checkout.MoveTo(CheckoutState.ReleasingBasket);
-                await _repository.UpdateAsync(checkout);
-                await AdvanceOrderAsync(checkout.CheckoutId);
+            case "StockReservationReleased" or "StockReservationStatusReturned"
+                when checkout.State == CheckoutState.ReleasingStock:
+                await HandleStockReleaseStatusAsync(checkout, envelope);
                 break;
 
-            case "BasketCheckoutReleased":
+            case "StockReleaseRejected" when checkout.State == CheckoutState.ReleasingStock:
+                var rejection = envelope.Payload.Deserialize<StockReleaseRejectedPayload>(JsonOptions);
+                if (rejection is not null)
+                    await MarkStockReleaseConflictAsync(checkout);
+                break;
+
+            case "BasketCheckoutReleased" when checkout.State == CheckoutState.ReleasingBasket:
                 var basketReleased = envelope.Payload.Deserialize<BasketCheckoutReleasedPayload>(JsonOptions);
 
                 if (basketReleased is null)
@@ -341,7 +360,7 @@ public class CheckoutProcessManager
                 await _repository.UpdateAsync(checkout);
                 break;
 
-            case "BasketPreparationRejected":
+            case "BasketPreparationRejected" when checkout.State == CheckoutState.AwaitingBasket:
                 var basketRejected = envelope.Payload.Deserialize<BasketPreparationRejectedPayload>(JsonOptions);
 
                 if (basketRejected is null)
@@ -352,7 +371,7 @@ public class CheckoutProcessManager
                 await FailAsync(checkout, $"Basket rejected the checkout: {basketRejected.Reason}", CheckoutState.Failed);
                 break;
 
-            case "CatalogLookupRejected":
+            case "CatalogLookupRejected" when checkout.State == CheckoutState.AwaitingCatalog:
                 var catalogRejected = envelope.Payload.Deserialize<CatalogLookupRejectedPayload>(JsonOptions);
 
                 if (catalogRejected is null)
@@ -368,6 +387,41 @@ public class CheckoutProcessManager
             default:
                 return;
         }
+    }
+
+    private async Task HandleStockReleaseStatusAsync(CheckoutProcess checkout, CheckoutMessageEnvelope envelope)
+    {
+        var status = envelope.Payload.Deserialize<StockReservationStatusPayload>(JsonOptions);
+        var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
+        if (status is null || order is null || order.Status == OrderStatus.Confirmed || status.OrderId != order.Id)
+        {
+            await MarkStockReleaseConflictAsync(checkout);
+            return;
+        }
+
+        if (status.CheckoutId == checkout.CheckoutId && status.Status == "Released")
+        {
+            checkout.FinishStockRelease();
+            await _repository.UpdateAsync(checkout);
+            await AdvanceOrderAsync(checkout.CheckoutId);
+            return;
+        }
+
+        if (envelope.MessageType == "StockReservationStatusReturned"
+            && ((status.CheckoutId == checkout.CheckoutId && status.Status is "Reserved" or "Confirmed" or "Rejected")
+                || (status.CheckoutId is null && status.Status == "Absent")))
+        {
+            await SendReleaseStockAsync(checkout, order.Id);
+            return;
+        }
+
+        await MarkStockReleaseConflictAsync(checkout);
+    }
+
+    private Task MarkStockReleaseConflictAsync(CheckoutProcess checkout)
+    {
+        checkout.MarkStockReleaseConflict(DateTimeOffset.UtcNow.Add(StockRecoveryInterval));
+        return _repository.UpdateAsync(checkout);
     }
 
     /// <summary>
@@ -565,8 +619,9 @@ public class CheckoutProcessManager
     {
         var order = await _orderRepository.FirstOrDefaultAsync(new OrderByCheckoutIdSpec(checkout.CheckoutId));
 
-        if (order is null)
+        if (order is null || order.Status == OrderStatus.Confirmed)
         {
+            await MarkStockReleaseConflictAsync(checkout);
             return false;
         }
 
@@ -581,6 +636,7 @@ public class CheckoutProcessManager
     {
         var correlationId = Guid.NewGuid();
         checkout.ExpectReply(correlationId);
+        checkout.ScheduleStockRecovery(DateTimeOffset.UtcNow.Add(StockRecoveryInterval));
 
         await _repository.UpdateAsync(checkout);
 

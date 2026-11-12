@@ -19,6 +19,7 @@ public class CheckoutProcessConfiguration : IEntityTypeConfiguration<CheckoutPro
             .HasMaxLength(500);
 
         builder.HasIndex(o => o.CheckoutId).IsUnique();
+        builder.Property(o => o.RowVersion).IsRowVersion();
 
         builder.OwnsOne(o => o.ShipToAddress, a =>
         {

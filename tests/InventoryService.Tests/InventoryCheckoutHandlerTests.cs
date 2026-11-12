@@ -23,6 +23,8 @@ public class InventoryCheckoutHandlerTests
     public async Task InvalidReservation_ReturnsCorrelatedRejectionWithoutChangingStock(string payload)
     {
         var request = Request(payload);
+        _stock.RejectForCheckoutAsync(42, request.CheckoutId, Arg.Any<string>(), default)
+            .Returns(call => StockReservation.RecordRejection(42, request.CheckoutId, "InvalidReservation", call.Arg<string>()));
 
         var reply = await new InventoryCheckoutHandler(_stock).HandleAsync(request, default);
 
@@ -31,8 +33,8 @@ public class InventoryCheckoutHandlerTests
         Assert.Equal(request.CorrelationId, reply.CorrelationId);
         Assert.Equal(request.MessageId, reply.CausationId);
         Assert.False(string.IsNullOrWhiteSpace(reply.Payload.GetProperty("reason").GetString()));
-        await _stock.DidNotReceiveWithAnyArgs().ReserveAsync(
-            default, default(IReadOnlyCollection<ReservationItem>)!, default);
+        await _stock.DidNotReceiveWithAnyArgs().ReserveForCheckoutAsync(
+            default, default, default(IReadOnlyCollection<ReservationItem>)!, default);
     }
 
     [Theory]

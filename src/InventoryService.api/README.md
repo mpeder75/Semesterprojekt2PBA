@@ -2,6 +2,8 @@
 
 Inventory owns stock quantities and order reservations in its own SQL Server database. It provides stock operations through HTTP and handles checkout requests from Order through RabbitMQ when configured.
 
+Inventory targets .NET 10. Use the .NET 10 SDK locally. The Inventory deployment workflow publishes a framework-dependent app, so configure `app-eshop-inventory` to use the .NET 10 runtime stack before deployment. [Azure App Service stack settings](https://learn.microsoft.com/en-us/azure/app-service/configure-common#configure-language-stack-settings)
+
 ## Architecture
 
 The service uses a folder-based onion-style structure within one project. Business operations depend on interfaces; the database implementation sits outside those operations.
@@ -23,11 +25,12 @@ These layer boundaries are expressed through folders, namespaces and interfaces 
 
 ## Run locally
 
-Run these commands from the `Semesterprojekt2PBA` directory. Install the .NET 8 SDK and SQL Server LocalDB, as used by the existing services.
+Install the .NET 10 SDK and SQL Server LocalDB. Run Inventory commands from `src/InventoryService.api`, where `global.json` selects .NET 10. Open `InventoryService.slnx` for the service and its tests.
 
 ```powershell
+Set-Location src/InventoryService.api
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet run --project src/InventoryService.api/InventoryService.api.csproj --no-launch-profile --urls http://localhost:57967
+dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls http://localhost:57967
 ```
 
 The default connection uses Windows authentication and the dedicated `InventoryDb` database on `(localdb)\MSSQLLocalDB`. Startup creates the database and applies its EF migrations. It adds no sample stock and preserves existing quantities on subsequent starts. Database startup errors stop the application.
@@ -127,27 +130,28 @@ Catalog and Order IDs are references supplied by callers. Inventory has no forei
 
 Set `RabbitMQ__Uri` to the same broker and virtual host as OrderService to enable messaging. Leaving the setting empty runs the HTTP API on its own.
 
-- Inventory consumes `ReserveStock`, `ConfirmStockReservation`, and `ReleaseStockReservation` from `inventory.requests`. OrderService declares `order.checkout.replies`, where Inventory sends confirmed, persistent replies with the original checkout and correlation IDs.
-- `StockReservationRejected` always includes `reason`. An insufficient-stock reply also includes `shortages` with the first short product's `catalogItemId`, `requestedQuantity`, and `availableQuantity`.
+- Inventory consumes `ReserveStock`, `ConfirmStockReservation`, `GetStockReservationStatus`, and `ReleaseStockReservation` from `inventory.requests`. OrderService declares `order.checkout.replies`, where Inventory sends confirmed, persistent replies with the original checkout and correlation IDs.
+- `StockReservationRejected` includes a stable `code` and a `reason`. Stock shortages include the first short product's `catalogItemId`, `requestedQuantity`, and `availableQuantity`. Inventory saves the rejection for a valid order/checkout pair so a delayed retry cannot allocate stock after replenishment.
 - A readable reservation request with invalid order/product IDs, non-positive quantities, duplicate products, or missing lines returns `StockReservationRejected`. Invalid JSON shapes, unsupported message types, and invalid envelopes follow dead-letter handling.
 - A checkout release records the order as released even when its reservation has yet to arrive. A later reserve for that order is rejected. Repeated release replies are safe.
+- `StockReservationStatusReturned` reports `Absent`, `Reserved`, `Confirmed`, `Rejected`, or `Released`, along with the order ID and stored checkout ID when available. `StockReleaseRejected` reports an expected release conflict, including a mismatch between the request and the stored checkout ID.
+- The lifecycle migration preserves reservation states and quantities. Older reservations have no saved checkout ID, so checkout messages cannot modify them. HTTP reservation writes apply to reservations without a checkout ID.
 - Before running checkout, set a RabbitMQ policy for queues matching `^inventory\.requests$` in the checkout virtual host. Set `dead-letter-exchange` to `eshop.checkout.dead` and `dead-letter-routing-key` to `inventory.requests`. Inventory creates the exchange and binds `inventory.requests.dead`. This lets Order and Inventory declare the request queue with the same settings.
 - When upgrading an existing broker, preserve any messages in `checkout.dead`. Remove its old binding from `eshop.checkout.dead` with routing key `inventory.requests` once all Inventory instances use the new queue, so future failed Inventory requests route only to `inventory.requests.dead`.
 
 Inventory acknowledges a request after RabbitMQ confirms its reply. It retries technical failures after 2, 5, and 15 seconds. Malformed requests and technical failures that exhaust retries go to the dead-letter queue when the broker policy is active.
 
-This adapter does not yet implement the group checkout plan's durable inbox/outbox handoffs, persisted retry budget, reservation status query, or release-rejection replies. Renaming the failed-request queue does not complete those recovery requirements.
+Durable inbox/outbox handoffs and persisted technical retries are still required by the group checkout plan.
 
 ## Tests
 
 ```powershell
-dotnet test tests/InventoryService.Tests/InventoryService.Tests.csproj
-dotnet test tests/IntegrationTests/IntegrationTests.csproj --filter 'FullyQualifiedName~Microsoft.eShopWeb.IntegrationTests.InventoryService'
+dotnet test InventoryService.slnx
 ```
 
 Unit tests require no database or broker. They cover initialization, setting quantities, increases/decreases, reservations, releases, insufficient stock, invalid inputs, overflow, and preserving quantities after a rejected change. Service tests substitute `IInventoryRepository` to verify allocation/release workflows, replay handling, rejected operations, safe conflict retries and uncertain-commit handling independently of EF Core.
 
-Inventory integration tests live in `tests/IntegrationTests/InventoryService`, alongside the existing Basket and Order repository tests in the shared `IntegrationTests` project. Run the command above for Inventory alone, or omit the filter to run all integration tests.
+Run the command above from `src/InventoryService.api`. The dedicated `InventoryService.IntegrationTests` project in `tests/IntegrationTests/InventoryService` runs on .NET 10 because it hosts Inventory in-process. The shared `IntegrationTests` project runs on .NET 8.
 
 Integration tests send real HTTP requests through `WebApplicationFactory` and use the real EF/SQL Server provider and migrations. They cover CRUD, adjustments, reservations/releases, replay after restart, concurrent orders and duplicate requests, database constraints, and rollback after both business rejection and forced SQL write failure. Each fixture creates a database named `InventoryTests_<random GUID>` and drops only that database afterward. SQL Server must be available; missing infrastructure fails the suite rather than skipping it.
 

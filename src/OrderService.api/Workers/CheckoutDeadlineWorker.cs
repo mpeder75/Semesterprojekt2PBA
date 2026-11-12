@@ -32,10 +32,37 @@ public class CheckoutDeadlineWorker : BackgroundService
             try
             {
                 await CancelExpiredCheckoutsAsync(stoppingToken);
+                await ReconcileStockReleasesAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Checking checkout deadlines failed");
+                _logger.LogError(ex, "Checking checkout deadlines and stock recovery failed");
+            }
+        }
+    }
+
+    private async Task ReconcileStockReleasesAsync(CancellationToken stoppingToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        List<CheckoutProcess> due;
+        await using (var scope = _scopeFactory.CreateAsyncScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IRepository<CheckoutProcess>>();
+            due = await repository.ListAsync(new StockReleaseRecoveryDueSpec(now), stoppingToken);
+        }
+
+        foreach (var checkout in due)
+        {
+            stoppingToken.ThrowIfCancellationRequested();
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var manager = scope.ServiceProvider.GetRequiredService<CheckoutProcessManager>();
+                await manager.ReconcileStockReleaseAsync(checkout.CheckoutId, now);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Checking stock release for checkout {CheckoutId} failed", checkout.CheckoutId);
             }
         }
     }

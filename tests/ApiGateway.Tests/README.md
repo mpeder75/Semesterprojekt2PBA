@@ -63,7 +63,7 @@ On 4 November 2026, the gateway Debug run passed **298 tests, 0 failed, 0 skippe
 
 The shared integration project also passed **53 tests, 0 failed, 0 skipped**. Its new [InventoryGatewayIntegrationTests](../IntegrationTests/InventoryService/InventoryGatewayIntegrationTests.cs) hosts the actual gateway and Inventory apps in-process, forwards through YARP into Inventory's TestServer, and verifies CRUD, adjustments and reservation/release behavior against a temporary SQL Server database. The test transport replaces outbound sockets; this is not a live Azure deployment or a test of an externally hosted Inventory URL.
 
-Gateway results are recorded in the ignored `TestResults/inventory-gateway.trx`; the shared suite writes `../IntegrationTests/TestResults/inventory-gateway-integration.trx`. Gateway tests themselves need no SQL Server; the shared integration suite requires its documented test database setup.
+Gateway results from that run were recorded in `TestResults/inventory-gateway.trx`. The gateway-to-Inventory test now runs in the [Inventory integration project](../IntegrationTests/InventoryService/InventoryService.IntegrationTests.csproj) with SQL Server.
 
 The local Release gateway run on 3 November 2026 passed:
 **255 passed, 0 failed, 0 skipped**, including all 88 circuit-breaker cases.

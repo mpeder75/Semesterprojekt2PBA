@@ -18,6 +18,21 @@ public class StockServiceTests
     }
 
     [Fact]
+    public async Task CheckoutReleaseWithWrongBinding_DoesNotChangeStockOrCommit()
+    {
+        var reservation = new StockReservation(42, [new ReservationItem(1, 3)], Guid.NewGuid());
+        _repository.GetReservationForUpdateAsync(42, default).Returns(reservation);
+
+        var error = await Assert.ThrowsAsync<InventoryConflictException>(() =>
+            _service.ReleaseForCheckoutAsync(42, Guid.NewGuid(), default));
+
+        Assert.Equal("CheckoutBindingMismatch", error.Code);
+        Assert.False(reservation.IsReleased);
+        await _repository.DidNotReceiveWithAnyArgs().GetStockForUpdateAsync(default, default);
+        await _transaction.DidNotReceive().CommitAsync(default);
+    }
+
+    [Fact]
     public async Task Reserve_AllocatesAllLinesAndSavesOneReservation()
     {
         var a = new InventoryItem(1, 10);

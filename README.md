@@ -140,14 +140,15 @@ Gatewayens lokale opsætning og Docker-kommandoer er beskrevet i
 
 | Værktøj | Krav | Note |
 | ------- | ---- | ---- |
-| **.NET 8 SDK** | Påkrævet — **SDK, ikke kun runtime** | `global.json` låser projektet til 8.0-serien (`rollForward: latestMinor`). En nyere SDK som .NET 10 bruges **ikke** til dette projekt, så har du kun .NET 10 installeret, fejler build. Hent SDK 8.0.x her: <https://dotnet.microsoft.com/download/dotnet/8.0> |
+| **.NET 8 SDK** | Påkrævet for hovedløsningen | Repoets `global.json` vælger .NET 8 SDK. [Hent .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0). |
+| **.NET 10 SDK** | Påkrævet for Inventory | Inventory har en [separat løsning og startvejledning](src/InventoryService.api/README.md#run-locally). [Hent .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0). |
 | **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificer med `sqllocaldb info` → skal vise `MSSQLLocalDB`. |
 
 Verificér at det rigtige SDK er på plads:
 
 ```bash
-dotnet --list-sdks
-# Der skal være en 8.0.x-linje (fx 8.0.425). 10.0.x må gerne stå ved siden af.
+dotnet --version
+# Forvent 8.0.x fra repoets rod og 10.0.x fra src/InventoryService.api.
 ```
 
 ### 1. Klon repo

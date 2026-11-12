@@ -15,6 +15,9 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
     public IReadOnlyCollection<CheckoutLine> Lines => _lines.AsReadOnly();
 
     public Guid? ExpectedCorrelationId { get; private set; }
+    public DateTimeOffset? StockRecoveryDueAt { get; private set; }
+    public CheckoutRecoveryStatus RecoveryStatus { get; private set; }
+    public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
 
     /// <summary>Hvor længe en checkout må vare, før den annulleres (før ordren er bekræftet).</summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(2);
@@ -70,9 +73,42 @@ public class CheckoutProcess : BaseEntity, IAggregateRoot
         ExpectedCorrelationId = correlationId;
     }
 
+    public void ScheduleStockRecovery(DateTimeOffset dueAt)
+    {
+        StockRecoveryDueAt = dueAt;
+    }
+
+    public void MarkStockRecoveryRetrying()
+    {
+        if (RecoveryStatus == CheckoutRecoveryStatus.None)
+            RecoveryStatus = CheckoutRecoveryStatus.Retrying;
+    }
+
+    public void MarkStockReleaseConflict(DateTimeOffset dueAt)
+    {
+        RecoveryStatus = CheckoutRecoveryStatus.NeedsAttention;
+        StockRecoveryDueAt = dueAt;
+        ExpectedCorrelationId = null;
+    }
+
+    public void FinishStockRelease()
+    {
+        State = CheckoutState.ReleasingBasket;
+        RecoveryStatus = CheckoutRecoveryStatus.None;
+        StockRecoveryDueAt = null;
+        ExpectedCorrelationId = null;
+    }
+
     public void SetFailure(string reason)
     {
         // Kolonnen er begrænset til 500 tegn
         FailureReason = reason.Length > 500 ? reason[..500] : reason;
     }
+}
+
+public enum CheckoutRecoveryStatus
+{
+    None,
+    Retrying,
+    NeedsAttention
 }

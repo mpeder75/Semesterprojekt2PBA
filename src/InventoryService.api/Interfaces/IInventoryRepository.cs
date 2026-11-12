@@ -9,6 +9,7 @@ public interface IInventoryRepository
     Task<InventoryItem?> GetStockForUpdateAsync(int catalogItemId, CancellationToken cancellationToken);
     Task<StockReservation?> GetReservationAsync(int orderId, CancellationToken cancellationToken);
     Task<StockReservation?> GetReservationForUpdateAsync(int orderId, CancellationToken cancellationToken);
+    Task<bool> HasReservationForAnotherOrderAsync(Guid checkoutId, int orderId, CancellationToken cancellationToken);
     // Changes are persisted together by IInventoryTransaction.CommitAsync.
     void AddStock(InventoryItem item);
     void RemoveStock(InventoryItem item);
