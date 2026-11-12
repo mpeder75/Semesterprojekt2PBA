@@ -1,6 +1,7 @@
 ﻿using Ardalis.GuardClauses;
 using Ardalis.Result;
 using BasketService.api.Entities.BasketAggregate;
+using BasketService.api.Entities.DTOs;
 using BasketService.api.Interfaces;
 using BasketService.api.Specifications;
 
@@ -95,5 +96,47 @@ public class BasketService : IBasketService
         Guard.Against.Null(basket, nameof(basket), $"Basket with ID {basketId} was not found");
 
         return basket;
+    }
+
+    public async Task<List<BasketPreparedDTO>> PrepareBasket(int basketId, string buyerId)
+    {
+        var basketSpec = new BasketWithItemsSpecification(basketId);
+        var basket = await _basketRepository.FirstOrDefaultAsync(basketSpec);
+
+        Guard.Against.Null(basket, nameof(basket), $"Basket with ID {basketId} was not found");
+
+        if (basket.BuyerId != buyerId)
+        {
+            throw new UnauthorizedAccessException(
+                $"Buyer {buyerId} does not own basket {basketId}.");
+        }
+
+        List<BasketPreparedDTO> itemDTOs = new List<BasketPreparedDTO>();
+
+        foreach (var item in basket.Items) 
+        {
+            BasketPreparedDTO itemDTO = new BasketPreparedDTO(item.CatalogItemId, item.Quantity);
+            itemDTOs.Add(itemDTO);
+        }
+
+        return itemDTOs;
+    }
+
+    public async Task<EmptyDto> CompleteBasketCheckout(int basketId, string buyerId, int orderId)
+    {
+        var basketSpec = new BasketWithItemsSpecification(basketId);
+        var basket = await _basketRepository.FirstOrDefaultAsync(basketSpec);
+
+        Guard.Against.Null(basket, nameof(basket), $"Basket with ID {basketId} was not found");
+
+        if (basket.BuyerId != buyerId)
+        {
+            throw new UnauthorizedAccessException(
+                $"Buyer {buyerId} does not own basket {basketId}.");
+        }
+
+        await _basketRepository.DeleteAsync(basket);
+
+        return new EmptyDto();
     }
 }

@@ -2,7 +2,6 @@
 using System.Text.Json;
 using BasketService.api.Interfaces;
 using BasketService.api.Messaging.Context;
-using BasketService.api.Messaging.Deserialization.Resolver;
 using BasketService.api.Messaging.Envelopes;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;

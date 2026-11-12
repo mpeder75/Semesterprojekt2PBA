@@ -63,7 +63,12 @@ builder.Services.AddScoped<IBasketMessageHandler<DeleteBasketMessage>, DeleteBas
 builder.Services.AddScoped<IBasketMessageHandler<SetBasketQuantitiesMessage>, SetBasketQuantitesMessageHandler>();
 builder.Services.AddScoped<IBasketMessageHandler<TransferBasketMessage>, TransferBasketMessageHandler>();
 builder.Services.AddScoped<IBasketMessageHandler<GetBasketByIdMessage, GetBasketByIdReply>, GetBasketByIdMessageHandler>();
+
+//MessageHandlerAdapation
 builder.Services.AddScoped<IBasketMessageHandlerAdapter, BasketReplyHandlerAdapter<GetBasketByIdMessage, GetBasketByIdReply>>();
+builder.Services.AddScoped<IBasketMessageHandlerAdapter, BasketReplyHandlerAdapter<PrepareBasketForCheckout, IBasketReply>>();
+builder.Services.AddScoped<IBasketMessageHandlerAdapter, BasketReplyHandlerAdapter<CompleteBasketCheckout, BasketCheckoutCompleted>>();
+builder.Services.AddScoped<IBasketMessageHandlerAdapter, BasketReplyHandlerAdapter<ReleaseBasketCheckout, BasketCheckoutReleased>>();
 
 //MessageDispatcher
 builder.Services.AddSingleton<IBasketMessageDispatcher, BasketMessageDispatcher>();
@@ -82,6 +87,11 @@ builder.Services.AddScoped<IBasketMessageSerializer, BasketMessageSerializer>();
 builder.Services.AddHostedService<BasketRabbitMqMessageConsumer>();
 builder.Services.AddHostedService<BasketRabbitMqRequestConsumer>();
 builder.Services.AddSingleton<IBasketRabbitMQReplyProducer, BasketRabbitMQReplyProducer>();
+
+//Forbidden
+builder.Services.AddScoped<IBasketMessageHandler<PrepareBasketForCheckout, IBasketReply>, PrepareBasketForCheckoutHandler>();
+builder.Services.AddScoped<IBasketMessageHandler<CompleteBasketCheckout, BasketCheckoutCompleted>, CompleteBasketCheckoutHandler>();
+builder.Services.AddScoped<IBasketMessageHandler<ReleaseBasketCheckout, BasketCheckoutReleased>, ReleaseBasketCheckoutHandler>();
 
 builder.Services.AddEndpoints();
 

@@ -12,7 +12,17 @@ public class BasketMessageRegistry
         [nameof(SetBasketQuantitiesMessage)] = typeof (SetBasketQuantitiesMessage),
         [nameof(TransferBasketMessage)] = typeof (TransferBasketMessage),
         [nameof(GetBasketByIdMessage)] = typeof (GetBasketByIdMessage),
-        [nameof(GetBasketByIdReply)] = typeof (GetBasketByIdReply)
+        [nameof(GetBasketByIdReply)] = typeof (GetBasketByIdReply),
+
+        [nameof(PrepareBasketForCheckout)] = typeof (PrepareBasketForCheckout),
+        [nameof(BasketPrepared)] = typeof (BasketPrepared),
+        [nameof(BasketPreparationRejected)] = typeof (BasketPreparationRejected),
+
+        [nameof(CompleteBasketCheckout)] = typeof (CompleteBasketCheckout),
+        [nameof(BasketCheckoutCompleted)] = typeof (BasketCheckoutCompleted),
+
+        [nameof(ReleaseBasketCheckout)] = typeof (ReleaseBasketCheckout),
+        [nameof(BasketCheckoutReleased)] = typeof (BasketCheckoutReleased),
     };
 
     public Type GetMessageType(string messageType)
