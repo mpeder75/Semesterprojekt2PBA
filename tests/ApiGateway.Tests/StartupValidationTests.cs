@@ -11,11 +11,12 @@ public sealed class StartupValidationTests
     [InlineData("catalog-service", "UseCatalogService")]
     [InlineData("basket-service", "UseBasketService")]
     [InlineData("order-service", "UseOrderService")]
+    [InlineData("inventory-service", "UseInventoryService")]
     public void Enabled_service_requires_a_configured_destination(string cluster, string flag)
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true,
+            Catalog = true, Basket = true, Order = true, Inventory = true,
             EmptyClusters = new[] { cluster }
         });
         var error = Assert.ThrowsAny<Exception>(() => factory.CreateGatewayClient());
@@ -30,11 +31,13 @@ public sealed class StartupValidationTests
     [InlineData("basket-service", "relative/path")]
     [InlineData("order-service", "ftp://example.test/")]
     [InlineData("order-service", "not a URL")]
+    [InlineData("inventory-service", "relative/path")]
+    [InlineData("inventory-service", "ftp://example.test/")]
     public void Invalid_selected_addresses_stop_startup(string cluster, string address)
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true,
+            Catalog = true, Basket = true, Order = true, Inventory = true,
             Configuration = new Dictionary<string, string?>
             {
                 [$"ReverseProxy:Clusters:{cluster}:Destinations:test:Address"] = address
@@ -60,11 +63,12 @@ public sealed class StartupValidationTests
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            EmptyClusters = new[] { "basket-service", "order-service" }
+            EmptyClusters = new[] { "basket-service", "order-service", "inventory-service" }
         });
         using var client = factory.CreateGatewayClient();
         await ServiceRoutingTests.AssertDisabled(client, "/api/baskets", "Basket");
         await ServiceRoutingTests.AssertDisabled(client, "/api/orders", "Order");
+        await ServiceRoutingTests.AssertDisabled(client, "/api/inventory/1", "Inventory");
         Assert.Empty(factory.Requests);
     }
 
@@ -116,7 +120,8 @@ public sealed class StartupValidationTests
             {
                 ["FeatureManagement:UseCatalogService"] = null,
                 ["FeatureManagement:UseBasketService"] = null,
-                ["FeatureManagement:UseOrderService"] = null
+                ["FeatureManagement:UseOrderService"] = null,
+                ["FeatureManagement:UseInventoryService"] = null
             }
         });
         using var client = factory.CreateGatewayClient();
@@ -124,6 +129,7 @@ public sealed class StartupValidationTests
             client, "/api/catalog-items", "monolith-api", "/api/catalog-items");
         await ServiceRoutingTests.AssertDisabled(client, "/api/baskets", "Basket");
         await ServiceRoutingTests.AssertDisabled(client, "/api/orders", "Order");
+        await ServiceRoutingTests.AssertDisabled(client, "/api/inventory/1", "Inventory");
     }
 
     [Fact]

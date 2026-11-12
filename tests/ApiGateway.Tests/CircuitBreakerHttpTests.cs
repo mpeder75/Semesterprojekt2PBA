@@ -13,6 +13,7 @@ public sealed class CircuitBreakerHttpTests
     [InlineData("/api/catalog-items", "catalog-service", true)]
     [InlineData("/api/baskets", "basket-service", true)]
     [InlineData("/api/orders", "order-service", true)]
+    [InlineData("/api/inventory/1", "inventory-service", true)]
     [InlineData("/api/catalog-items", "monolith-api", false)]
     public async Task Repeated_backend_failures_open_the_circuit_and_stop_forwarding(
         string path, string cluster, bool catalog)
@@ -22,6 +23,7 @@ public sealed class CircuitBreakerHttpTests
             Catalog = catalog,
             Basket = true,
             Order = true,
+            Inventory = true,
             Configuration = BreakerSettings(),
             Backend = (_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.InternalServerError)
@@ -76,6 +78,7 @@ public sealed class CircuitBreakerHttpTests
             Catalog = catalog,
             Basket = true,
             Order = true,
+            Inventory = true,
             Configuration = BreakerSettings(),
             Backend = (request, _) => Task.FromResult(new HttpResponseMessage(
                 request.Path.StartsWith("/api/catalog-", StringComparison.Ordinal)
@@ -100,6 +103,7 @@ public sealed class CircuitBreakerHttpTests
         {
         ("/api/baskets", "basket-service", "/basket"),
         ("/api/orders", "order-service", "/api/orders"),
+        ("/api/inventory/1", "inventory-service", "/api/inventory/1"),
         ("/", "monolith-web", "/"),
         ("/Identity/Account/Login", "monolith-web", "/Identity/Account/Login"),
         ("/api/unknown", "monolith-api", "/api/unknown")
@@ -127,6 +131,7 @@ public sealed class CircuitBreakerHttpTests
     [InlineData("/api/catalog-items", "catalog-service", "/api/catalog-items")]
     [InlineData("/api/baskets/test-buyer/items", "basket-service", "/basket/test-buyer/items")]
     [InlineData("/api/orders", "order-service", "/api/orders")]
+    [InlineData("/api/inventory/reservations", "inventory-service", "/api/inventory/reservations")]
     public async Task Failed_posts_are_forwarded_once_without_retries_or_fallback(
         string path, string cluster, string backendPath)
     {
@@ -135,6 +140,7 @@ public sealed class CircuitBreakerHttpTests
             Catalog = true,
             Basket = true,
             Order = true,
+            Inventory = true,
             Configuration = BreakerSettings(),
             Backend = (_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.InternalServerError)

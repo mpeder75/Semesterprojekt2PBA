@@ -10,7 +10,7 @@ public sealed class TrafficControlTests
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Catalog = true, Basket = true, Order = true,
+            Catalog = true, Basket = true, Order = true, Inventory = true,
             Configuration = Limits(api: 1)
         });
         using var client = factory.CreateGatewayClient();
@@ -18,6 +18,7 @@ public sealed class TrafficControlTests
         Assert.Equal(HttpStatusCode.OK, await Get(client, "/api/catalog-items"));
         Assert.Equal(HttpStatusCode.TooManyRequests, await Get(client, "/api/orders"));
         Assert.Equal(HttpStatusCode.TooManyRequests, await Get(client, "/api/baskets"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Get(client, "/api/inventory/1"));
         Assert.Single(factory.Requests);
     }
 

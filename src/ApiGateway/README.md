@@ -1,7 +1,7 @@
 # API Gateway
 
 The gateway is an ASP.NET Core (.NET 8) application using YARP. It forwards
-requests to Web, Catalog, Basket and Order, and retains local PublicApi routes
+requests to Web, Catalog, Basket, Order and Inventory, and retains local PublicApi routes
 for the monolith fallback. It contains no business database.
 
 ```text
@@ -9,14 +9,15 @@ Browser -> Gateway -> Web: pages, sign-in and /User
                    -> Catalog: catalog API when enabled
                    -> Basket: basket API when enabled
                    -> Order: order API when enabled
+                   -> Inventory: stock and reservation APIs when enabled
                    -> PublicApi: legacy API/fallback, when configured
 ```
 
-Checked-in Production configuration enables Catalog and leaves Basket and Order
+Checked-in Production configuration enables Catalog and leaves Basket, Order and Inventory
 disabled. PublicApi is not deployed in Azure. Web continues to handle sign-in through
 ASP.NET Core Identity; a separate Identity service is not part of this change.
 
-Polly.Core provides circuit breaking for the tagged Catalog, Basket and Order
+Polly.Core provides circuit breaking for the tagged Catalog, Basket, Order and Inventory
 API routes, with independent state per selected backend cluster. The existing
 ASP.NET Core rate limits and request timeouts remain in use.
 
@@ -38,6 +39,7 @@ when troubleshooting a deployed instance.
 | `catalog-service` | `https://localhost:7101/` | `https://app-eshop-catalog-cpfcatama7aqcpem.swedencentral-01.azurewebsites.net/` |
 | `basket-service` | `https://localhost:7102/` | `https://app-eshop-basket-h4dudzc0cec9d6gb.swedencentral-01.azurewebsites.net/` |
 | `order-service` | `https://localhost:7103/` | `https://app-eshop-order-dfd9awhue9hqacdu.swedencentral-01.azurewebsites.net/` |
+| `inventory-service` | `http://localhost:57967/` | Empty destinations; disabled until a deployment address is configured. |
 | `monolith-api` | `https://localhost:5099/` | Empty destinations: PublicApi is unavailable. |
 
 `AllowedHosts` is `localhost` in shared configuration. Production allows
@@ -55,6 +57,22 @@ For example, these gateway App Settings override Production values:
 Double underscores separate configuration levels. Use the destination name
 `azure` for Production overrides and `local` for Development overrides.
 
+### Enable Inventory in Azure
+
+After Inventory is deployed and running, open the **gateway App Service** in
+Azure and add these values under **Environment variables → App settings**.
+
+| App setting | Value |
+| --- | --- |
+| `ReverseProxy__Clusters__inventory-service__Destinations__azure__Address` | The Inventory App Service's HTTPS URL from its Overview page, ending in `/` |
+| `FeatureManagement__UseInventoryService` | `true` |
+
+Apply both settings so the gateway starts with a valid destination when it reads
+the flag. Verify by requesting `GET /api/inventory/{catalogItemId}` through the
+gateway for a product with stock initialized in Inventory. Expect HTTP 200 and
+the stock quantities. Set the flag to `false` and apply if you need to disable
+the route.
+
 ## Routes and service flags
 
 Lower `Order` values take priority. Login POSTs match before general API/Web
@@ -69,6 +87,7 @@ routes, and service routes match before the API catch-all.
 | `catalog-types` | `/api/catalog-types/{**remainder}` | -5 | Selected Catalog backend | `api` | 2 minutes |
 | `basket-api` | `/api/baskets/{**remainder}` | -5 | `basket-service`, or 503 when disabled | `api` | 2 minutes |
 | `order-api` | `/api/orders/{**remainder}` | -5 | `order-service`, or 503 when disabled | `api` | 2 minutes |
+| `inventory-api` | `/api/inventory/{**remainder}` | -5 | `inventory-service`, or 503 when disabled | `api` | 2 minutes |
 | `public-api` | `/api/{**remainder}` | 0 | `monolith-api` | `api` | 2 minutes |
 | `public-api-swagger` | `/swagger/{**remainder}` in Development | 0 | `monolith-api` | None | None |
 | `web` | `/{**remainder}` | 100 | `monolith-web` | None | None |
@@ -78,7 +97,7 @@ and `/api/orders/123` all select the Order route. Gateway tests cover these
 cases. Matching a route does not guarantee that the backend supports that path
 or HTTP method.
 
-All three services use the same routing implementation:
+All four domain services use the same routing implementation:
 
 1. [ServiceRoutingSelection.cs](ServiceRoutingSelection.cs) reads all service
    flags once at startup, chooses each destination and validates required URLs.
@@ -95,7 +114,7 @@ Managed routes declare metadata such as:
 }
 ```
 
-Use `Catalog`, `Basket` or `Order` consistently with
+Use `Catalog`, `Basket`, `Order` or `Inventory` consistently with
 [ServiceRouteMetadata.cs](ServiceRouteMetadata.cs). Unknown service labels fail
 configuration loading. Untagged routes keep their configured destination.
 
@@ -104,6 +123,7 @@ configuration loading. Untagged routes keep their configured destination.
 | `UseCatalogService` | `false` | Route to `monolith-api` | Route to `catalog-service` | `true` |
 | `UseBasketService` | `false` | Return 503 for tagged Basket API routes | Route to `basket-service` | `false` |
 | `UseOrderService` | `false` | Return 503 for tagged Order API routes | Route to `order-service` | `false` |
+| `UseInventoryService` | `false` | Return 503 for tagged Inventory API routes | Route to `inventory-service` | `false` |
 
 Restart the gateway after changing flags. The startup selection must initialize
 before `MapReverseProxy` loads routes; [Program.cs](Program.cs) preserves and
@@ -111,6 +131,8 @@ comments this ordering. Web always requires a valid destination. Every selected
 service/fallback requires at least one destination, and all its destination
 addresses must be absolute HTTP or HTTPS URLs. This checks configuration, not
 backend availability.
+
+Inventory has no monolith fallback. The root, nested stock/adjustment paths and reservation/release paths are forwarded unchanged, for all HTTP methods. In Production, Inventory has no checked-in destination; enabling its flag without configuring a valid destination fails startup with an error naming `UseInventoryService`. Its Production Host-header transform uses the backend host, as for the other service routes.
 
 Catalog OFF in Production deliberately fails startup while `monolith-api` has
 no destination. A local Catalog fallback remains supported. There is no
@@ -158,7 +180,7 @@ uses the resulting `RemoteIpAddress` as the partition key, or `unknown` if absen
 
 | Policy | Default allowance per IP | Window | Applies to |
 | --- | ---: | --- | --- |
-| `api` | 60 requests | 1 minute | All Catalog, Basket, Order and general API routes |
+| `api` | 60 requests | 1 minute | All Catalog, Basket, Order, Inventory and general API routes |
 | `login` | 10 requests | 1 minute | Both login POST routes |
 
 All routes in a policy share that IP's allowance; the API and login policies
@@ -210,8 +232,9 @@ cluster has its own circuit, shared across its protected routes and clients.
 | Tagged Catalog routes, Catalog OFF | `monolith-api` |
 | Tagged Basket routes, Basket ON | `basket-service` |
 | Tagged Order routes, Order ON | `order-service` |
+| Tagged Inventory routes, Inventory ON | `inventory-service` |
 
-Disabled Basket/Order routes return their existing disabled-service response
+Disabled Basket/Order/Inventory routes return their existing disabled-service response
 before reaching the breaker. Untagged Web, login, public API catch-all and
 Swagger routes bypass it, including when they share a cluster with a protected
 route. Gateway health also bypasses it. Protection applies to HTTP requests
@@ -284,7 +307,7 @@ gateway counts those responses without distinguishing that underlying cause.
 
 [ADR 0001](../../docs/adr/0001-gateway-circuit-breaker.md) records the implemented
 decision. The [test documentation](../../tests/ApiGateway.Tests/README.md#recorded-local-verification)
-records the 255-test result and the running local outage/recovery demonstration.
+records the latest 298-test gateway result and the earlier running local outage/recovery demonstration.
 
 ### HTTPS and Swagger
 
@@ -381,11 +404,14 @@ dotnet run --project src/PublicApi --no-launch-profile -- --urls "https://localh
 # Start these only when testing their enabled gateway API routes.
 dotnet run --project src/BasketService.api --no-launch-profile -- --urls "https://localhost:7102"
 dotnet run --project src/OrderService.api --no-launch-profile -- --urls "https://localhost:7103"
+dotnet run --project src/InventoryService.api --no-launch-profile -- --urls "http://localhost:57967"
 ```
 
 Enable Basket/Order by setting `FeatureManagement__UseBasketService` or
 `FeatureManagement__UseOrderService` to `true` in the gateway terminal before
 restarting it. Their backend database configuration must also be ready.
+
+For Inventory, set `$env:FeatureManagement__UseInventoryService = "true"` in the gateway terminal before starting/restarting the gateway. Start Inventory on the HTTP port above, then use URLs such as `https://localhost:7153/api/inventory/1` and `https://localhost:7153/api/inventory/reservations`. Inventory's own Swagger remains at `http://localhost:57967/swagger`; gateway root Swagger keeps its existing PublicApi behavior. Inventory API requests need only Inventory and the gateway running. See [Inventory's README](../InventoryService.api/README.md) for create/reserve/release examples.
 
 In another terminal, check:
 
@@ -447,8 +473,7 @@ limits, production Host/HSTS policies, Development-only Swagger, timeouts and
 circuit breaking. Breaker coverage includes thresholds, per-cluster isolation,
 short-circuit rejection, recovery and reopening, concurrent recovery trials,
 failure classification, configuration validation and single-attempt writes.
-The recorded local Release run passed all 255 cases. Tests do not contact Azure
-or require backend databases.
+The 4 November 2026 gateway run passed all 298 cases, including Inventory route/toggle, timeout/rate-limit, outage isolation and recovery checks. Gateway tests do not contact Azure or require backend databases. The separate shared integration project also tests YARP forwarding into the actual Inventory application with SQL Server; that suite requires the documented test database prerequisites.
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests
 to main, matching pushes to main and manual dispatches. Its Windows build job
@@ -499,7 +524,7 @@ not expose circuit state or downstream readiness.
 | --- | --- |
 | 400 Bad Host | Effective `AllowedHosts` and the actual public request hostname. |
 | Catalog fallback startup error | Catalog is OFF but `monolith-api` has no valid destination; Azure currently requires Catalog ON. |
-| 503 with `Basket API is disabled` or `Order API is disabled` | The corresponding service flag is OFF; enable it and restart to use that API. |
+| 503 with `Basket API is disabled`, `Order API is disabled` or `Inventory API is disabled` | The corresponding service flag is OFF; enable it and restart to use that API. |
 | 503 with `code: circuit_open` | The selected backend circuit is open or a recovery trial is in progress. Inspect its transition logs and the backend; use `Retry-After` when present. |
 | Circuit-breaker options validation error | Check the effective `CircuitBreaker` settings against the ranges above. |
 | Legacy API 503 in Production | PublicApi has no Azure destination; Web sign-in uses the Web login route. |

@@ -31,7 +31,9 @@ public sealed class ConfigurationTests
         using var config = ReadConfiguration("Production");
         Assert.True(config.GetValue<bool>("FeatureManagement:UseCatalogService"));
         Assert.Empty(config.GetSection("ReverseProxy:Clusters:monolith-api:Destinations").GetChildren());
-        foreach (var cluster in GatewayFactory.Clusters.Where(cluster => cluster != "monolith-api"))
+        Assert.False(config.GetValue<bool>("FeatureManagement:UseInventoryService"));
+        Assert.Empty(config.GetSection("ReverseProxy:Clusters:inventory-service:Destinations").GetChildren());
+        foreach (var cluster in GatewayFactory.Clusters.Where(cluster => cluster is not "monolith-api" and not "inventory-service"))
         {
             var destinations = config.GetSection($"ReverseProxy:Clusters:{cluster}:Destinations").GetChildren();
             Assert.NotEmpty(destinations);
@@ -52,6 +54,7 @@ public sealed class ConfigurationTests
     [InlineData("catalog-service", "Catalog")]
     [InlineData("basket-service", "Basket")]
     [InlineData("order-service", "Order")]
+    [InlineData("inventory-service", "Inventory")]
     public void Every_managed_route_declares_consistent_metadata_rate_policy_and_timeout(
         string cluster, string service)
     {

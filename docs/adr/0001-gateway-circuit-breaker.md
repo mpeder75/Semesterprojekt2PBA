@@ -2,7 +2,7 @@
 
 - Status: Proposed, pending PR review
 - Date: 2026-10-27
-- Updated: 2026-11-03
+- Updated: 2026-11-04
 - Scope: Gateway-to-backend HTTP communication
 
 ## Context
@@ -28,8 +28,9 @@ that state across requests and shares it across clients and protected routes.
 | Tagged Catalog routes, Catalog OFF | `monolith-api` |
 | Tagged Basket routes, Basket ON | `basket-service` |
 | Tagged Order routes, Order ON | `order-service` |
+| Tagged Inventory routes, Inventory ON | `inventory-service` |
 
-Disabled Basket/Order routes return their existing disabled-service response
+Disabled Basket/Order/Inventory routes return their existing disabled-service response
 before reaching the breaker. Untagged Web, login, public API catch-all and
 Swagger routes bypass the breaker, even if they share a backend with a protected
 route. Gateway health also bypasses it. Direct service HTTP calls, local Web

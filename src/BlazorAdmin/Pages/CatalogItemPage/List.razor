@@ -51,6 +51,10 @@ else
                             Edit
                         </button>
 
+                        <button @onclick="@(() => ManageStockComponent.OpenAsync(item))" @onclick:stopPropagation="true" class="btn btn-secondary">
+                            Manage stock
+                        </button>
+
                         <button @onclick="@(() => DeleteClick(item.Id))" @onclick:stopPropagation="true" class="btn btn-danger">
                             Delete
                         </button>
@@ -62,6 +66,7 @@ else
 
     <Details Brands="@catalogBrands" Types="@catalogTypes" OnEditClick="EditClick" @ref="DetailsComponent"></Details>
     <Edit Brands="@catalogBrands" Types="@catalogTypes" OnSaveClick="ReloadCatalogItems" @ref="EditComponent"></Edit>
+    <ManageStock @ref="ManageStockComponent"></ManageStock>
     <Create Brands="@catalogBrands" Types="@catalogTypes" OnSaveClick="ReloadCatalogItems" @ref="CreateComponent"></Create>
     <Delete Brands="@catalogBrands" Types="@catalogTypes" OnSaveClick="ReloadCatalogItems" @ref="DeleteComponent"></Delete>
 }

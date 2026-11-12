@@ -1,0 +1,249 @@
+@using System.Net
+@using System.Text.Json
+@inject InventoryStockService Inventory
+@inject ToastService Toasts
+@inject IJSRuntime JSRuntime
+@namespace BlazorAdmin.Pages.CatalogItemPage
+
+@if (_isOpen)
+{
+    <div class="modal show" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="inventoryStockTitle" style="display:block">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <EditForm Model="_form" OnValidSubmit="SaveAsync">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="inventoryStockTitle">Manage stock for @_itemName</h5>
+                        <button type="button" class="close" aria-label="Close" disabled="@IsBusy" @onclick="CloseAsync">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        @if (_isLoading)
+                        {
+                            <Spinner></Spinner>
+                        }
+                        else if (_confirmDelete)
+                        {
+                            <p>Delete the stock record for @_itemName? You can initialize stock again later.</p>
+                        }
+                        else if (_hasLoaded)
+                        {
+                            @if (_stock is null)
+                            {
+                                <p>Stock has not been initialized for this product.</p>
+                            }
+                            else
+                            {
+                                <dl class="row">
+                                    <dt class="col-sm-4">On hand</dt>
+                                    <dd class="col-sm-8">@_stock.Quantity</dd>
+                                    <dt class="col-sm-4">Reserved</dt>
+                                    <dd class="col-sm-8">@_stock.ReservedQuantity</dd>
+                                    <dt class="col-sm-4">Available</dt>
+                                    <dd class="col-sm-8">@_stock.AvailableQuantity</dd>
+                                </dl>
+                            }
+                            <div class="form-group">
+                                <label for="inventoryStockQuantity">On-hand quantity</label>
+                                <InputNumber id="inventoryStockQuantity" class="form-control"
+                                             @bind-Value="_form.Quantity" min="@MinimumQuantity" disabled="@IsBusy" />
+                                <ValidationMessage For="@(() => _form.Quantity)" />
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_error))
+                        {
+                            <div class="alert alert-danger" role="alert">@_error</div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        @if (_confirmDelete)
+                        {
+                            <button type="button" class="btn btn-secondary" disabled="@IsBusy" @onclick="CancelDelete">Cancel</button>
+                            <button type="button" class="btn btn-danger" disabled="@IsBusy" @onclick="DeleteAsync">Delete stock</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-secondary" disabled="@IsBusy" @onclick="CloseAsync">Cancel</button>
+                            @if (_hasLoaded)
+                            {
+                                @if (CanDelete)
+                                {
+                                    <button type="button" class="btn btn-danger" disabled="@IsBusy" @onclick="RequestDelete">Delete stock</button>
+                                }
+                                <button type="submit" class="btn btn-primary" disabled="@IsBusy">
+                                    @(_stock is null ? "Initialize stock" : "Save")
+                                </button>
+                            }
+                            else if (!IsBusy)
+                            {
+                                <button type="button" class="btn btn-primary" @onclick="LoadStockAsync">Retry</button>
+                            }
+                        }
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private int _catalogItemId;
+    private string _itemName = "";
+    private string _error = "";
+    private InventoryStock _stock;
+    private StockForm _form = new();
+    private bool _isOpen;
+    private bool _isLoading;
+    private bool _isWriting;
+    private bool _hasLoaded;
+    private bool _confirmDelete;
+
+    private bool IsBusy => _isLoading || _isWriting;
+    private bool CanDelete => _hasLoaded && _stock is { Quantity: 0, ReservedQuantity: 0 };
+    private int MinimumQuantity => _stock?.ReservedQuantity ?? 0;
+
+    public async Task OpenAsync(CatalogItem item)
+    {
+        if (_isOpen)
+        {
+            return;
+        }
+
+        _catalogItemId = item.Id;
+        _itemName = item.Name;
+        await new Css(JSRuntime).HideBodyOverflow();
+        _isOpen = true;
+        await LoadStockAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadStockAsync()
+    {
+        _isLoading = true;
+        _hasLoaded = false;
+        _confirmDelete = false;
+        _error = "";
+        StateHasChanged();
+
+        try
+        {
+            _stock = await Inventory.GetAsync(_catalogItemId);
+            _form = new StockForm { Quantity = _stock?.Quantity ?? 0 };
+            _hasLoaded = true;
+        }
+        catch (Exception error) when (error is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            _error = "Could not load stock. Try again.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (IsBusy || !_hasLoaded || _confirmDelete)
+        {
+            return;
+        }
+
+        if (_form.Quantity is not int quantity || quantity < MinimumQuantity)
+        {
+            _error = $"Enter an on-hand quantity of at least {MinimumQuantity}.";
+            return;
+        }
+
+        _isWriting = true;
+        _error = "";
+        try
+        {
+            await Inventory.SaveAsync(_catalogItemId, quantity, create: _stock is null);
+        }
+        catch (HttpRequestException error) when (error.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.NotFound)
+        {
+            await ReloadAfterConflictAsync();
+            return;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        {
+            _error = "Could not save stock. Try again.";
+            return;
+        }
+        finally
+        {
+            _isWriting = false;
+        }
+
+        await CloseAsync();
+        Toasts.ShowToast("Stock saved.", ToastLevel.Success);
+    }
+
+    private void RequestDelete()
+    {
+        _error = "";
+        _confirmDelete = true;
+    }
+
+    private void CancelDelete()
+    {
+        _error = "";
+        _confirmDelete = false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (IsBusy || !_confirmDelete || !CanDelete)
+        {
+            return;
+        }
+
+        _isWriting = true;
+        _error = "";
+        try
+        {
+            await Inventory.DeleteAsync(_catalogItemId);
+            _stock = null;
+            _form = new StockForm { Quantity = 0 };
+            _confirmDelete = false;
+            Toasts.ShowToast("Stock deleted.", ToastLevel.Success);
+        }
+        catch (HttpRequestException error) when (error.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.NotFound)
+        {
+            await ReloadAfterConflictAsync();
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        {
+            _error = "Could not delete stock. Try again.";
+        }
+        finally
+        {
+            _isWriting = false;
+        }
+    }
+
+    private async Task ReloadAfterConflictAsync()
+    {
+        await LoadStockAsync();
+        if (_hasLoaded)
+        {
+            _error = "Stock changed. Review the current quantities and try again.";
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (!IsBusy)
+        {
+            _isOpen = false;
+            await new Css(JSRuntime).ShowBodyOverflow();
+        }
+    }
+
+    private sealed class StockForm
+    {
+        public int? Quantity { get; set; }
+    }
+}
