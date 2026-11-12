@@ -3,4 +3,5 @@
 public class StockReservationRejectedPayload
 {
     public string Reason { get; set; } = string.Empty;
+    public string? Code { get; set; }
 }

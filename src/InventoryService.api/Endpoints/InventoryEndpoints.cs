@@ -128,13 +128,7 @@ public static class InventoryEndpoints
 
     private static ReservationResponse ToResponse(StockReservation reservation)
     {
-        var status = reservation switch
-        {
-            { IsReleased: true } => "Released",
-            { IsConfirmed: true } => "Confirmed",
-            _ => "Reserved"
-        };
-        return new(reservation.OrderId, status,
+        return new(reservation.OrderId, reservation.Status.ToString(),
             reservation.Items.OrderBy(x => x.CatalogItemId)
                 .Select(x => new ReservationItemResponse(x.CatalogItemId, x.Quantity)).ToList());
     }

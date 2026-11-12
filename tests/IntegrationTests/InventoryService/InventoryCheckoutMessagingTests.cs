@@ -25,7 +25,7 @@ public class InventoryCheckoutMessagingTests(InventoryApiFactory factory) : ICla
 
         var confirmed = await SendAsync("ConfirmStockReservation", checkoutId, new { orderId = 101 });
         Assert.Equal("StockReservationConfirmed", confirmed.MessageType);
-        Assert.Equal("{}", confirmed.Payload.GetRawText());
+        Assert.Equal("Confirmed", confirmed.Payload.GetProperty("status").GetString());
         Assert.Equal(3, await ReadReservedQuantityAsync(1));
     }
 
@@ -34,11 +34,13 @@ public class InventoryCheckoutMessagingTests(InventoryApiFactory factory) : ICla
     {
         await CreateStockAsync(2, 5);
         await CreateStockAsync(3, 1);
-        var rejected = await SendAsync("ReserveStock", Guid.NewGuid(), new
+        var checkoutId = Guid.NewGuid();
+        var request = new
         {
             orderId = 102,
             items = new[] { new { catalogItemId = 2, quantity = 2 }, new { catalogItemId = 3, quantity = 3 } }
-        });
+        };
+        var rejected = await SendAsync("ReserveStock", checkoutId, request);
 
         Assert.Equal("StockReservationRejected", rejected.MessageType);
         Assert.False(string.IsNullOrWhiteSpace(rejected.Payload.GetProperty("reason").GetString()));
@@ -47,6 +49,16 @@ public class InventoryCheckoutMessagingTests(InventoryApiFactory factory) : ICla
         Assert.Equal(3, shortage.GetProperty("requestedQuantity").GetInt32());
         Assert.Equal(1, shortage.GetProperty("availableQuantity").GetInt32());
         Assert.Equal(0, await ReadReservedQuantityAsync(2));
+        Assert.Equal(0, await ReadReservedQuantityAsync(3));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<IStockService>().SetAsync(3, 10, default);
+
+        var replay = await SendAsync("ReserveStock", checkoutId, request);
+        Assert.Equal("StockReservationRejected", replay.MessageType);
+        Assert.Equal(rejected.Payload.GetRawText(), replay.Payload.GetRawText());
+        var status = await SendAsync("GetStockReservationStatus", checkoutId, new { orderId = 102 });
+        Assert.Equal("Rejected", status.Payload.GetProperty("status").GetString());
         Assert.Equal(0, await ReadReservedQuantityAsync(3));
     }
 
@@ -68,6 +80,42 @@ public class InventoryCheckoutMessagingTests(InventoryApiFactory factory) : ICla
         Assert.Equal("StockReserved",
             (await SendAsync("ReserveStock", Guid.NewGuid(), new { orderId = 104, items })).MessageType);
         Assert.Equal(3, await ReadReservedQuantityAsync(4));
+    }
+
+    [Fact]
+    public async Task ReleaseRequiresMatchingCheckoutAndCanBeVerifiedByStatus()
+    {
+        const int orderId = 105;
+        var checkoutId = Guid.NewGuid();
+        await CreateStockAsync(5, 10);
+
+        var absent = await SendAsync("GetStockReservationStatus", checkoutId, new { orderId });
+        Assert.Equal("Absent", absent.Payload.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, absent.Payload.GetProperty("checkoutId").ValueKind);
+
+        await SendAsync("ReserveStock", checkoutId,
+            new { orderId, items = new[] { new { catalogItemId = 5, quantity = 3 } } });
+        var reserved = await SendAsync("GetStockReservationStatus", checkoutId, new { orderId });
+        Assert.Equal("Reserved", reserved.Payload.GetProperty("status").GetString());
+        await SendAsync("ConfirmStockReservation", checkoutId, new { orderId });
+        var confirmed = await SendAsync("GetStockReservationStatus", checkoutId, new { orderId });
+        Assert.Equal("Confirmed", confirmed.Payload.GetProperty("status").GetString());
+
+        var wrongCheckout = await SendAsync("ReleaseStockReservation", Guid.NewGuid(), new { orderId });
+        Assert.Equal("StockReleaseRejected", wrongCheckout.MessageType);
+        Assert.Equal("CheckoutBindingMismatch", wrongCheckout.Payload.GetProperty("code").GetString());
+        var wrongOrder = await SendAsync("ReleaseStockReservation", checkoutId, new { orderId = 106 });
+        Assert.Equal("StockReleaseRejected", wrongOrder.MessageType);
+        Assert.Equal("CheckoutBindingMismatch", wrongOrder.Payload.GetProperty("code").GetString());
+        Assert.Equal(3, await ReadReservedQuantityAsync(5));
+
+        await SendAsync("ReleaseStockReservation", checkoutId, new { orderId });
+        var status = await SendAsync("GetStockReservationStatus", checkoutId, new { orderId });
+        Assert.Equal("StockReservationStatusReturned", status.MessageType);
+        Assert.Equal("Released", status.Payload.GetProperty("status").GetString());
+        Assert.Equal(orderId, status.Payload.GetProperty("orderId").GetInt32());
+        Assert.Equal(checkoutId, status.Payload.GetProperty("checkoutId").GetGuid());
+        Assert.Equal(0, await ReadReservedQuantityAsync(5));
     }
 
     private async Task<CheckoutMessageEnvelope> SendAsync(string messageType, Guid checkoutId, object payload)

@@ -54,50 +54,83 @@ public class StockService(IInventoryRepository repository) : IStockService
     }
 
     public Task<(StockReservation Reservation, bool Created)> ReserveAsync(
-        int orderId, IReadOnlyCollection<ReservationItem> items, CancellationToken cancellationToken)
+        int orderId, IReadOnlyCollection<ReservationItem> items, CancellationToken cancellationToken) =>
+        ReserveAsync(new StockReservation(orderId, items), cancellationToken);
+
+    public async Task<StockReservation> ReserveForCheckoutAsync(
+        int orderId, Guid checkoutId, IReadOnlyCollection<ReservationItem> items, CancellationToken cancellationToken) =>
+        (await ReserveAsync(new StockReservation(orderId, items, checkoutId), cancellationToken)).Reservation;
+
+    public async Task<StockReservation> RejectForCheckoutAsync(
+        int orderId, Guid checkoutId, string reason, CancellationToken cancellationToken) =>
+        (await ReserveAsync(StockReservation.RecordRejection(orderId, checkoutId, "InvalidReservation", reason),
+            cancellationToken)).Reservation;
+
+    private Task<(StockReservation Reservation, bool Created)> ReserveAsync(
+        StockReservation requested, CancellationToken cancellationToken)
     {
-        var requested = new StockReservation(orderId, items);
         return InTransactionAsync(async () =>
         {
-            var existing = await repository.GetReservationForUpdateAsync(orderId, cancellationToken);
+            var existing = await FindReservationForUpdateAsync(requested.OrderId, requested.CheckoutId, cancellationToken);
             if (existing is not null)
             {
+                if (existing.Status == ReservationStatus.Rejected || (existing.IsReleased && requested.CheckoutId.HasValue))
+                    return (existing, false);
                 if (existing.IsReleased && existing.Items.Count == 0)
                     throw new InventoryConflictException("This order was released before stock was reserved.");
                 if (!existing.Matches(requested))
-                    throw new InventoryConflictException("This order already has a reservation with different items.");
-                // A delayed replay returns even a released reservation without allocating again.
+                    throw new InventoryConflictException("This order already has a reservation with different items.",
+                        code: "ReservationItemsMismatch");
                 return (existing, false);
             }
-            try
+
+            var allocations = new List<(InventoryItem Stock, int Quantity)>();
+            foreach (var line in requested.Items.OrderBy(x => x.CatalogItemId))
             {
-                foreach (var line in requested.Items.OrderBy(x => x.CatalogItemId))
+                var stock = await repository.GetStockForUpdateAsync(line.CatalogItemId, cancellationToken);
+                if (stock is not null && stock.AvailableQuantity >= line.Quantity)
                 {
-                    var stock = await RequireStockAsync(line.CatalogItemId, cancellationToken);
-                    if (stock.AvailableQuantity < line.Quantity)
-                        throw new InventoryConflictException("There is not enough available stock for this reservation.",
-                            new StockShortage(line.CatalogItemId, line.Quantity, stock.AvailableQuantity));
-                    stock.Reserve(line.Quantity);
+                    allocations.Add((stock, line.Quantity));
+                    continue;
                 }
-            }
-            catch (Exception error) when (error is InventoryConflictException or KeyNotFoundException)
-            {
+
                 // An identical concurrent request may have reserved these units since the first read.
-                if (await repository.GetReservationAsync(orderId, cancellationToken) is not null)
+                if (await repository.GetReservationAsync(requested.OrderId, cancellationToken) is not null)
                     throw new InventoryConcurrencyException("The order was reserved concurrently; reload its outcome.");
-                throw;
+
+                var reason = stock is null ? $"Stock is not initialized for product {line.CatalogItemId}."
+                    : "There is not enough available stock for this reservation.";
+                var available = stock?.AvailableQuantity ?? 0;
+                if (requested.CheckoutId is not Guid checkoutId)
+                {
+                    if (stock is null)
+                        throw new KeyNotFoundException(reason);
+
+                    throw new InventoryConflictException(reason,
+                        new StockShortage(line.CatalogItemId, line.Quantity, available));
+                }
+
+                var rejected = StockReservation.RecordRejection(requested.OrderId, checkoutId,
+                    stock is null ? "StockNotInitialized" : "InsufficientStock", reason,
+                    line.CatalogItemId, line.Quantity, available);
+                repository.AddReservation(rejected);
+                return (rejected, true);
             }
+
+            foreach (var (stock, quantity) in allocations)
+                stock.Reserve(quantity);
+
             repository.AddReservation(requested);
             return (requested, true);
         }, cancellationToken);
     }
 
-    public Task<StockReservation> ConfirmAsync(int orderId, CancellationToken cancellationToken)
+    public Task<StockReservation> ConfirmAsync(int orderId, CancellationToken cancellationToken, Guid? checkoutId = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
         return InTransactionAsync(async () =>
         {
-            var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken)
+            var reservation = await FindReservationForUpdateAsync(orderId, checkoutId, cancellationToken)
                 ?? throw new KeyNotFoundException("Reservation not found.");
             ApplyStockRule(reservation.Confirm);
             return reservation;
@@ -105,23 +138,23 @@ public class StockService(IInventoryRepository repository) : IStockService
     }
 
     public Task<StockReservation> ReleaseAsync(int orderId, CancellationToken cancellationToken) =>
-        ReleaseAsync(orderId, recordMissing: false, cancellationToken);
+        ReleaseAsync(orderId, checkoutId: null, cancellationToken);
 
-    public Task<StockReservation> ReleaseForCheckoutAsync(int orderId, CancellationToken cancellationToken) =>
-        ReleaseAsync(orderId, recordMissing: true, cancellationToken);
+    public Task<StockReservation> ReleaseForCheckoutAsync(int orderId, Guid checkoutId, CancellationToken cancellationToken) =>
+        ReleaseAsync(orderId, checkoutId, cancellationToken);
 
-    private Task<StockReservation> ReleaseAsync(int orderId, bool recordMissing, CancellationToken cancellationToken)
+    private Task<StockReservation> ReleaseAsync(int orderId, Guid? checkoutId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(orderId);
         return InTransactionAsync(async () =>
         {
-            var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken);
+            var reservation = await FindReservationForUpdateAsync(orderId, checkoutId, cancellationToken);
             if (reservation is null)
             {
-                if (!recordMissing)
+                if (checkoutId is not Guid id)
                     throw new KeyNotFoundException("Reservation not found.");
 
-                reservation = StockReservation.RecordEarlyRelease(orderId);
+                reservation = StockReservation.RecordEarlyRelease(orderId, id);
                 repository.AddReservation(reservation);
                 return reservation;
             }
@@ -145,6 +178,20 @@ public class StockService(IInventoryRepository repository) : IStockService
             reservation.MarkReleased();
             return reservation;
         }, cancellationToken);
+    }
+
+    private async Task<StockReservation?> FindReservationForUpdateAsync(
+        int orderId, Guid? checkoutId, CancellationToken cancellationToken)
+    {
+        var reservation = await repository.GetReservationForUpdateAsync(orderId, cancellationToken);
+        if ((reservation is not null && reservation.CheckoutId != checkoutId)
+            || (reservation is null && checkoutId is Guid id
+                && await repository.HasReservationForAnotherOrderAsync(id, orderId, cancellationToken)))
+        {
+            throw new InventoryConflictException("The order and checkout do not match the saved reservation.",
+                code: "CheckoutBindingMismatch");
+        }
+        return reservation;
     }
 
     private async Task<InventoryItem> RequireStockAsync(int catalogItemId, CancellationToken cancellationToken)

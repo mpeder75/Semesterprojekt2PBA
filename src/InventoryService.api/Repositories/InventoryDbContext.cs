@@ -31,6 +31,9 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
             reservation.HasKey(x => x.OrderId);
             reservation.Property(x => x.OrderId).ValueGeneratedNever();
             reservation.Property(x => x.RowVersion).IsRowVersion();
+            reservation.HasIndex(x => x.CheckoutId).IsUnique();
+            reservation.Ignore(x => x.IsReleased);
+            reservation.Ignore(x => x.IsConfirmed);
             // This relationship stays entirely inside Inventory's own database.
             reservation.HasMany(x => x.Items).WithOne().HasForeignKey("OrderId").OnDelete(DeleteBehavior.Cascade);
         });

@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -10,10 +11,13 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
+using global::InventoryService.api.Consumers;
 
 namespace Microsoft.eShopWeb.IntegrationTests.InventoryService;
 
@@ -44,6 +48,13 @@ public sealed class InventoryApiFactory : WebApplicationFactory<Program>, IAsync
                 ["Authentication:JwtSigningKey"] = Convert.ToBase64String(SigningKey),
                 ["Logging:LogLevel:Default"] = "Warning"
             }));
+        builder.ConfigureTestServices(services =>
+        {
+            // These tests use isolated SQL databases and call the handler directly.
+            var consumer = services.Single(service => service.ServiceType == typeof(IHostedService)
+                && service.ImplementationType == typeof(InventoryCheckoutRequestConsumer));
+            services.Remove(consumer);
+        });
     }
 
     internal HttpClient CreateAdminClient() => CreateAdminClient(this);

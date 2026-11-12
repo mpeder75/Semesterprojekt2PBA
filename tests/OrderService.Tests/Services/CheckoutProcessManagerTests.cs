@@ -553,7 +553,8 @@ public class CheckoutProcessManagerTests
         Assert.Equal(CheckoutQueues.Inventory, sent.Queue);
         Assert.Equal("ReleaseStockReservation", sent.MessageType);
 
-        await ReplyAsync(checkout, "StockReservationReleased", new StockReservationReleasedPayload());
+        await ReplyAsync(checkout, "StockReservationReleased",
+            new StockReservationStatusPayload { OrderId = TestOrderId, CheckoutId = checkout.CheckoutId, Status = "Released" });
         Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
 
         await ReplyAsync(checkout, "BasketCheckoutReleased", new BasketCheckoutReleasedPayload());
@@ -636,7 +637,8 @@ public class CheckoutProcessManagerTests
         var checkout = await CheckoutWaitingForConfirmationReply();
 
         await ReplyAsync(checkout, "StockConfirmationRejected", new StockConfirmationRejectedPayload { Reason = "Reservation expired" });
-        await ReplyAsync(checkout, "StockReservationReleased", new StockReservationReleasedPayload());
+        await ReplyAsync(checkout, "StockReservationReleased",
+            new StockReservationStatusPayload { OrderId = TestOrderId, CheckoutId = checkout.CheckoutId, Status = "Released" });
 
         Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
 
@@ -670,6 +672,72 @@ public class CheckoutProcessManagerTests
 
         Assert.Equal(2, SentTypes().Count(t => t == "ReleaseStockReservation"));
         Assert.Equal(CheckoutState.ReleasingStock, checkout.State);
+    }
+
+    [Fact]
+    public async Task LostReleaseReply_ContinuesWhenStatusConfirmsTheRelease()
+    {
+        var checkout = await CheckoutWaitingForConfirmationReply();
+        await _manager.CancelAsync(checkout.CheckoutId);
+        var dueAt = checkout.StockRecoveryDueAt!.Value;
+
+        await _manager.ReconcileStockReleaseAsync(checkout.CheckoutId, dueAt.AddSeconds(-1));
+        Assert.DoesNotContain("GetStockReservationStatus", SentTypes());
+        await _manager.ReconcileStockReleaseAsync(checkout.CheckoutId, dueAt);
+        var query = SentMessages().Last();
+        Assert.Equal(CheckoutQueues.Inventory, query.Queue);
+        Assert.Equal("GetStockReservationStatus", query.MessageType);
+        Assert.Equal(TestOrderId, Assert.IsType<GetStockReservationStatusPayload>(query.Payload).OrderId);
+
+        await ReplyAsync(checkout, "StockReservationStatusReturned",
+            new StockReservationStatusPayload { OrderId = TestOrderId, CheckoutId = checkout.CheckoutId, Status = "Released" });
+
+        Assert.Equal(CheckoutState.ReleasingBasket, checkout.State);
+        Assert.Equal(CheckoutRecoveryStatus.None, checkout.RecoveryStatus);
+        Assert.Equal("ReleaseBasketCheckout", SentTypes().Last());
+    }
+
+    [Theory]
+    [InlineData("Absent")]
+    [InlineData("Reserved")]
+    [InlineData("Confirmed")]
+    [InlineData("Rejected")]
+    public async Task StockStatusWithoutRelease_RetriesReleaseAndKeepsCheckoutUnresolved(string status)
+    {
+        var checkout = await CheckoutWaitingForConfirmationReply();
+        await _manager.CancelAsync(checkout.CheckoutId);
+        await _manager.ReconcileStockReleaseAsync(checkout.CheckoutId, checkout.StockRecoveryDueAt!.Value);
+
+        await ReplyAsync(checkout, "StockReservationStatusReturned",
+            new StockReservationStatusPayload
+            {
+                OrderId = TestOrderId,
+                CheckoutId = status == "Absent" ? null : checkout.CheckoutId,
+                Status = status
+            });
+
+        Assert.Equal(CheckoutState.ReleasingStock, checkout.State);
+        Assert.Equal(OrderStatus.Rejected, _savedOrder!.Status);
+        Assert.Equal(2, SentTypes().Count(t => t == "ReleaseStockReservation"));
+        Assert.DoesNotContain("ReleaseBasketCheckout", SentTypes());
+    }
+
+    [Fact]
+    public async Task StockReleaseRejected_QueriesStatusAndDoesNotAcceptAnotherCheckoutsRelease()
+    {
+        var checkout = await CheckoutWaitingForConfirmationReply();
+        await _manager.CancelAsync(checkout.CheckoutId);
+        await ReplyAsync(checkout, "StockReleaseRejected",
+            new StockReleaseRejectedPayload(TestOrderId, "CheckoutBindingMismatch", "Checkout does not match."));
+
+        Assert.Equal(CheckoutRecoveryStatus.NeedsAttention, checkout.RecoveryStatus);
+        await _manager.ReconcileStockReleaseAsync(checkout.CheckoutId, checkout.StockRecoveryDueAt!.Value);
+        await ReplyAsync(checkout, "StockReservationStatusReturned",
+            new StockReservationStatusPayload { OrderId = TestOrderId, CheckoutId = Guid.NewGuid(), Status = "Released" });
+
+        Assert.Equal(CheckoutState.ReleasingStock, checkout.State);
+        Assert.Equal(CheckoutRecoveryStatus.NeedsAttention, checkout.RecoveryStatus);
+        Assert.DoesNotContain("ReleaseBasketCheckout", SentTypes());
     }
 
     [Fact]

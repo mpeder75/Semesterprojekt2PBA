@@ -24,6 +24,9 @@ public class InventoryRepository(InventoryDbContext database) : IInventoryReposi
         database.Reservations.Include(x => x.Items)
             .SingleOrDefaultAsync(x => x.OrderId == orderId, cancellationToken);
 
+    public Task<bool> HasReservationForAnotherOrderAsync(Guid checkoutId, int orderId, CancellationToken cancellationToken) =>
+        database.Reservations.AnyAsync(x => x.CheckoutId == checkoutId && x.OrderId != orderId, cancellationToken);
+
     public void AddStock(InventoryItem item) => database.InventoryItems.Add(item);
 
     public void RemoveStock(InventoryItem item) => database.InventoryItems.Remove(item);

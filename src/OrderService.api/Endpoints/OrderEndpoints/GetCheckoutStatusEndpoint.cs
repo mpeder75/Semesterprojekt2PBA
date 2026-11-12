@@ -28,6 +28,7 @@ public class GetCheckoutStatusEndpoint : IEndpoint<IResult, Guid, IRepository<Ch
             OrderId = order?.Id,
             State = checkout.State.ToString(),
             Status = TranslateState(checkout.State),
+            RecoveryStatus = checkout.RecoveryStatus.ToString(),
             CreatedAt = checkout.CreatedAt,
             FailureReason = checkout.FailureReason
         };

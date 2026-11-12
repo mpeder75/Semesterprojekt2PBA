@@ -404,7 +404,10 @@ dotnet run --project src/PublicApi --no-launch-profile -- --urls "https://localh
 # Start these only when testing their enabled gateway API routes.
 dotnet run --project src/BasketService.api --no-launch-profile -- --urls "https://localhost:7102"
 dotnet run --project src/OrderService.api --no-launch-profile -- --urls "https://localhost:7103"
-dotnet run --project src/InventoryService.api --no-launch-profile -- --urls "http://localhost:57967"
+
+# Inventory uses its own .NET 10 SDK settings. Run in a separate terminal.
+Set-Location src/InventoryService.api
+dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls "http://localhost:57967"
 ```
 
 Enable Basket/Order by setting `FeatureManagement__UseBasketService` or
@@ -473,7 +476,7 @@ limits, production Host/HSTS policies, Development-only Swagger, timeouts and
 circuit breaking. Breaker coverage includes thresholds, per-cluster isolation,
 short-circuit rejection, recovery and reopening, concurrent recovery trials,
 failure classification, configuration validation and single-attempt writes.
-The 4 November 2026 gateway run passed all 298 cases, including Inventory route/toggle, timeout/rate-limit, outage isolation and recovery checks. Gateway tests do not contact Azure or require backend databases. The separate shared integration project also tests YARP forwarding into the actual Inventory application with SQL Server; that suite requires the documented test database prerequisites.
+The 4 November 2026 gateway run passed all 298 cases, including Inventory route/toggle, timeout/rate-limit, outage isolation and recovery checks. Gateway tests do not contact Azure or require backend databases. The [Inventory integration project](../../tests/IntegrationTests/InventoryService/InventoryService.IntegrationTests.csproj) also tests YARP forwarding into the actual Inventory application with SQL Server.
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests
 to main, matching pushes to main and manual dispatches. Its Windows build job

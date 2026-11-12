@@ -23,9 +23,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Infrastructure\Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\InventoryService.api\InventoryService.api.csproj" />
-    <ProjectReference Include="..\..\src\ApiGateway\ApiGateway.csproj" Aliases="GatewayApi" />
     <ProjectReference Include="..\UnitTests\UnitTests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="InventoryService/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,7 @@ public class CheckoutStatusResponse : BaseResponse, IAggregateRoot
     public string State { get; set; } = string.Empty;
     public string? FailureReason { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string RecoveryStatus { get; set; } = string.Empty;
     public int? OrderId { get; set; }
 
     public CheckoutStatusResponse(Guid correlationId) : base(correlationId)
