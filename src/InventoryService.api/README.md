@@ -25,12 +25,11 @@ These layer boundaries are expressed through folders, namespaces and interfaces 
 
 ## Run locally
 
-Install the .NET 10 SDK and SQL Server LocalDB. Run Inventory commands from `src/InventoryService.api`, where `global.json` selects .NET 10. Open `InventoryService.slnx` for the service and its tests.
+Install the .NET 10 SDK and SQL Server LocalDB. Open `eShopOnWeb.sln` for Inventory, its tests, and the other services. Run the following commands from the repository root.
 
 ```powershell
-Set-Location src/InventoryService.api
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls http://localhost:57967
+dotnet run --project src/InventoryService.api --no-launch-profile -- --urls http://localhost:57967
 ```
 
 The default connection uses Windows authentication and the dedicated `InventoryDb` database on `(localdb)\MSSQLLocalDB`. Startup creates the database and applies its EF migrations. It adds no sample stock and preserves existing quantities on subsequent starts. Database startup errors stop the application.
@@ -146,12 +145,13 @@ Durable inbox/outbox handoffs and persisted technical retries are still required
 ## Tests
 
 ```powershell
-dotnet test InventoryService.slnx
+dotnet test tests/InventoryService.Tests/InventoryService.Tests.csproj
+dotnet test tests/IntegrationTests/InventoryService/InventoryService.IntegrationTests.csproj
 ```
 
 Unit tests require no database or broker. They cover initialization, setting quantities, increases/decreases, reservations, releases, insufficient stock, invalid inputs, overflow, and preserving quantities after a rejected change. Service tests substitute `IInventoryRepository` to verify allocation/release workflows, replay handling, rejected operations, safe conflict retries and uncertain-commit handling independently of EF Core.
 
-Run the command above from `src/InventoryService.api`. The dedicated `InventoryService.IntegrationTests` project in `tests/IntegrationTests/InventoryService` runs on .NET 10 because it hosts Inventory in-process. The shared `IntegrationTests` project runs on .NET 8.
+Run the commands above from the repository root. The dedicated `InventoryService.IntegrationTests` project runs on .NET 10 because it hosts Inventory in-process. The shared `IntegrationTests` project runs on .NET 8. Both are part of `eShopOnWeb.sln`.
 
 Integration tests send real HTTP requests through `WebApplicationFactory` and use the real EF/SQL Server provider and migrations. They cover CRUD, adjustments, reservations/releases, replay after restart, concurrent orders and duplicate requests, database constraints, and rollback after both business rejection and forced SQL write failure. Each fixture creates a database named `InventoryTests_<random GUID>` and drops only that database afterward. SQL Server must be available; missing infrastructure fails the suite rather than skipping it.
 

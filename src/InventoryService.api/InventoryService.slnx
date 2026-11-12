@@ -1,6 +1,0 @@
-<Solution>
-  <Project Path="InventoryService.api.csproj" />
-  <Project Path="../ApiGateway/ApiGateway.csproj" />
-  <Project Path="../../tests/InventoryService.Tests/InventoryService.Tests.csproj" />
-  <Project Path="../../tests/IntegrationTests/InventoryService/InventoryService.IntegrationTests.csproj" />
-</Solution>
