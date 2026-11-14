@@ -15,4 +15,10 @@ public class CheckoutServiceSettings
 
     /// <summary>OrderService' adresse (gatewayen). Standard: http://localhost:5233/.</summary>
     public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// BasketService' adresse. Bruges af broen ved checkout, som lægger monolittens kurv over i BasketService, før
+    /// OrderService starter. Standard: http://localhost:62002/.
+    /// </summary>
+    public string? BasketBaseUrl { get; set; }
 }

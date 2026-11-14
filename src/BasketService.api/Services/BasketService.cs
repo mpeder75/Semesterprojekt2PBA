@@ -111,9 +111,14 @@ public class BasketService : IBasketService
                 $"Buyer {buyerId} does not own basket {basketId}.");
         }
 
+        if (basket.Items.Count == 0)
+        {
+            throw new InvalidOperationException($"Basket {basketId} is empty.");
+        }
+
         List<BasketPreparedDTO> itemDTOs = new List<BasketPreparedDTO>();
 
-        foreach (var item in basket.Items) 
+        foreach (var item in basket.Items)
         {
             BasketPreparedDTO itemDTO = new BasketPreparedDTO(item.CatalogItemId, item.Quantity);
             itemDTOs.Add(itemDTO);
@@ -127,7 +132,11 @@ public class BasketService : IBasketService
         var basketSpec = new BasketWithItemsSpecification(basketId);
         var basket = await _basketRepository.FirstOrDefaultAsync(basketSpec);
 
-        Guard.Against.Null(basket, nameof(basket), $"Basket with ID {basketId} was not found");
+        // Kurven er allerede ryddet (fx en gentaget besked): svar ok, ellers hænger checkouten uden svar
+        if (basket is null)
+        {
+            return new EmptyDto();
+        }
 
         if (basket.BuyerId != buyerId)
         {

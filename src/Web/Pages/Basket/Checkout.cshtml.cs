@@ -24,6 +24,7 @@ public class CheckoutModel : PageModel
     private readonly IBasketViewModelService _basketViewModelService;
     private readonly IAppLogger<CheckoutModel> _logger;
     private readonly ICheckoutApiClient _checkoutApiClient;
+    private readonly IBasketApiClient _basketApiClient;
     private readonly CheckoutServiceSettings _checkoutSettings;
 
     public CheckoutModel(IBasketService basketService,
@@ -32,6 +33,7 @@ public class CheckoutModel : PageModel
         IOrderService orderService,
         IAppLogger<CheckoutModel> logger,
         ICheckoutApiClient checkoutApiClient,
+        IBasketApiClient basketApiClient,
         IOptions<CheckoutServiceSettings> checkoutSettings)
     {
         _basketService = basketService;
@@ -40,6 +42,7 @@ public class CheckoutModel : PageModel
         _basketViewModelService = basketViewModelService;
         _logger = logger;
         _checkoutApiClient = checkoutApiClient;
+        _basketApiClient = basketApiClient;
         _checkoutSettings = checkoutSettings.Value;
     }
 
@@ -93,9 +96,13 @@ public class CheckoutModel : PageModel
     }
 
     /// <summary>
-    /// Starter checkouten hos OrderService og sender kunden videre til statussiden. Web sletter ikke kurven;
-    /// det gør BasketService, når checkouten er færdig.
+    /// Starter checkouten hos OrderService og sender kunden videre til statussiden.
     /// </summary>
+    /// <remarks>
+    /// Monolitten ejer stadig kurven, men OrderService henter kurvens indhold hos BasketService. Derfor lægges kurven
+    /// først over i BasketService (en bro), og det kurv-id, BasketService giver tilbage, bruges til checkouten.
+    /// Kurven i monolitten ryddes først, når checkouten er gennemført (se statussiden).
+    /// </remarks>
     private async Task<IActionResult> StartCheckoutAtOrderServiceAsync()
     {
         if (BasketModel.Items.Count == 0)
@@ -108,7 +115,23 @@ public class CheckoutModel : PageModel
         var buyerId = BasketModel.BuyerId ?? User.Identity!.Name!;
         var checkoutKey = CheckoutKey == Guid.Empty ? Guid.NewGuid() : CheckoutKey;
 
-        var result = await _checkoutApiClient.StartAsync(checkoutKey, BasketModel.Id, buyerId, address);
+        int basketServiceBasketId;
+        try
+        {
+            var lines = BasketModel.Items
+                .Select(i => new BasketLine(i.CatalogItemId, i.UnitPrice, i.Quantity))
+                .ToList();
+            basketServiceBasketId = await _basketApiClient.ReplaceBasketAsync(buyerId, lines);
+        }
+        catch (BasketBridgeException ex)
+        {
+            _logger.LogWarning("Could not prepare the basket in BasketService: {Message}", ex.Message);
+            ModelState.AddModelError(string.Empty, "We could not prepare your basket for checkout right now. Please try again.");
+            CheckoutKey = checkoutKey;
+            return Page();
+        }
+
+        var result = await _checkoutApiClient.StartAsync(checkoutKey, basketServiceBasketId, buyerId, address);
 
         switch (result.Outcome)
         {

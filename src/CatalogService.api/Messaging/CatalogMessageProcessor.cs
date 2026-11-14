@@ -35,10 +35,16 @@ public class CatalogMessageProcessor : ICatalogMessageProcessor
         throw new InvalidOperationException($"Message handler for {message.GetType().Name} returned no reply.");
 
         var payload = _messageSerializer.Serialize(reply);
+        var replyType = reply.GetType().Name;
+
+        // En checkout-request får en hel kuvert tilbage (med checkoutId og correlationId), de gamle kun payload
+        var body = CatalogReplyEnvelope.IsCheckoutRequest(envelope)
+            ? CatalogReplyEnvelope.Build(envelope, replyContext, replyType, payload)
+            : payload;
 
         await _producer.PublishAsync(
-            payload,
-            reply.GetType().Name,
+            body,
+            replyType,
             replyContext,
             cancellationToken);
     }
