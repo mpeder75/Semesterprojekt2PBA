@@ -26,6 +26,22 @@ public static class ConfigureWebServices
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
+        // "My orders" og ordredetaljer læses fra OrderService, når kontakten er slået til
+        services.AddHttpClient<IOrderApiClient, OrderApiClient>(client =>
+        {
+            var baseUrl = configuration[$"{CheckoutServiceSettings.SectionName}:BaseUrl"];
+            client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(baseUrl) ? "http://localhost:5233/" : baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        // Broen ved checkout: monolitten ejer stadig kurven, men BasketService skal kende den, før checkouten starter
+        services.AddHttpClient<IBasketApiClient, BasketApiClient>(client =>
+        {
+            var baseUrl = configuration[$"{CheckoutServiceSettings.SectionName}:BasketBaseUrl"];
+            client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(baseUrl) ? "http://localhost:62002/" : baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
         return services;
     }
 }

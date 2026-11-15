@@ -46,10 +46,16 @@ public sealed class BasketMessageProcessor : IBasketMessageProcessor
         throw new InvalidOperationException($"Message handler for {message.GetType().Name} returned no reply.");
 
         var payload = _messageSerializer.Serialize(reply);
+        var replyType = reply.GetType().Name;
+
+        // En checkout-request får en hel kuvert tilbage (med checkoutId og correlationId), de gamle kun payload
+        var body = BasketReplyEnvelope.IsCheckoutRequest(envelope)
+            ? BasketReplyEnvelope.Build(envelope, replyContext, replyType, payload)
+            : payload;
 
         await _replyProducer.PublishAsync(
-            payload,
-            reply.GetType().Name,
+            body,
+            replyType,
             replyContext,
             cancellationToken);
     }

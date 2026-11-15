@@ -13,8 +13,8 @@ Browser -> Gateway -> Web: pages, sign-in and /User
                    -> PublicApi: legacy API/fallback, when configured
 ```
 
-Checked-in Production configuration enables Catalog and leaves Basket, Order and Inventory
-disabled. PublicApi is not deployed in Azure. Web continues to handle sign-in through
+Checked-in Production configuration enables Catalog, Basket, Order and Inventory.
+PublicApi is not deployed in Azure. Web continues to handle sign-in through
 ASP.NET Core Identity; a separate Identity service is not part of this change.
 
 Polly.Core provides circuit breaking for the tagged Catalog, Basket, Order and Inventory
@@ -27,7 +27,7 @@ ASP.NET Core rate limits and request timeouts remain in use.
 | --- | --- |
 | [appsettings.json](appsettings.json) | Shared routes, service metadata, flag defaults, circuit-breaker settings, logging and local allowed host. Contains no backend destinations. |
 | [appsettings.Development.json](appsettings.Development.json) | Local backend destinations, each named `local`. |
-| [appsettings.Production.json](appsettings.Production.json) | Azure destinations named `azure`, the gateway hostname, Catalog enabled and production Host-header transforms. |
+| [appsettings.Production.json](appsettings.Production.json) | Azure destinations named `azure`, the gateway hostname, four service routes enabled and production Host-header transforms. |
 
 Environment-specific JSON overrides the shared file. Environment variables and
 Azure App Settings can override JSON values. Use the effective configuration
@@ -39,11 +39,11 @@ when troubleshooting a deployed instance.
 | `catalog-service` | `https://localhost:7101/` | `https://app-eshop-catalog-cpfcatama7aqcpem.swedencentral-01.azurewebsites.net/` |
 | `basket-service` | `https://localhost:7102/` | `https://app-eshop-basket-h4dudzc0cec9d6gb.swedencentral-01.azurewebsites.net/` |
 | `order-service` | `https://localhost:7103/` | `https://app-eshop-order-dfd9awhue9hqacdu.swedencentral-01.azurewebsites.net/` |
-| `inventory-service` | `http://localhost:57967/` | Empty destinations; disabled until a deployment address is configured. |
+| `inventory-service` | `http://localhost:57967/` | `https://app-eshop-inventory-epf5dgakg9d6b9cc.swedencentral-01.azurewebsites.net/` |
 | `monolith-api` | `https://localhost:5099/` | Empty destinations: PublicApi is unavailable. |
 
 `AllowedHosts` is `localhost` in shared configuration. Production allows
-`eshop-yarp-gatewa-hzakhph2f9chhmc0.swedencentral-01.azurewebsites.net`.
+`eshop-yarp-gateway-g2c9bzeteqdbbpfn.swedencentral-01.azurewebsites.net`.
 Configure the actual public hostname when deploying another environment.
 
 For example, these gateway App Settings override Production values:
@@ -57,10 +57,11 @@ For example, these gateway App Settings override Production values:
 Double underscores separate configuration levels. Use the destination name
 `azure` for Production overrides and `local` for Development overrides.
 
-### Enable Inventory in Azure
+### Override Inventory routing in Azure
 
-After Inventory is deployed and running, open the **gateway App Service** in
-Azure and add these values under **Environment variables → App settings**.
+The Production file enables Inventory with the project's App Service address.
+To override it, open the **gateway App Service** in Azure and set these values
+under **Environment variables → App settings**.
 
 | App setting | Value |
 | --- | --- |
@@ -121,9 +122,9 @@ configuration loading. Untagged routes keep their configured destination.
 | Flag | Shared default | When false | When true | Production default |
 | --- | --- | --- | --- | --- |
 | `UseCatalogService` | `false` | Route to `monolith-api` | Route to `catalog-service` | `true` |
-| `UseBasketService` | `false` | Return 503 for tagged Basket API routes | Route to `basket-service` | `false` |
-| `UseOrderService` | `false` | Return 503 for tagged Order API routes | Route to `order-service` | `false` |
-| `UseInventoryService` | `false` | Return 503 for tagged Inventory API routes | Route to `inventory-service` | `false` |
+| `UseBasketService` | `false` | Return 503 for tagged Basket API routes | Route to `basket-service` | `true` |
+| `UseOrderService` | `false` | Return 503 for tagged Order API routes | Route to `order-service` | `true` |
+| `UseInventoryService` | `false` | Return 503 for tagged Inventory API routes | Route to `inventory-service` | `true` |
 
 Restart the gateway after changing flags. The startup selection must initialize
 before `MapReverseProxy` loads routes; [Program.cs](Program.cs) preserves and
@@ -132,7 +133,7 @@ service/fallback requires at least one destination, and all its destination
 addresses must be absolute HTTP or HTTPS URLs. This checks configuration, not
 backend availability.
 
-Inventory has no monolith fallback. The root, nested stock/adjustment paths and reservation/release paths are forwarded unchanged, for all HTTP methods. In Production, Inventory has no checked-in destination; enabling its flag without configuring a valid destination fails startup with an error naming `UseInventoryService`. Its Production Host-header transform uses the backend host, as for the other service routes.
+The Inventory root, nested stock/adjustment paths and reservation/release paths are forwarded unchanged for all HTTP methods. The Production Host-header transform uses the backend host, as for the other service routes.
 
 Catalog OFF in Production deliberately fails startup while `monolith-api` has
 no destination. A local Catalog fallback remains supported. There is no
@@ -351,10 +352,9 @@ gateway hostname so browser login and API requests use the same origin.
 
 ## Run locally
 
-Run commands from the repository root. Install a stable .NET 8 SDK compatible
-with [global.json](../../global.json): baseline `8.0.100`,
-`rollForward: latestMinor`, previews disabled. This permits later compatible
-.NET 8 SDKs; it does not pin the machine to `8.0.425` or select .NET 9/10.
+Run commands from the repository root. Use the .NET 10 SDK selected by
+[global.json](../../global.json) to build the gateway. The gateway and its own
+tests target .NET 8 and use the ASP.NET Core 8 runtime.
 [Directory.Packages.props](../../Directory.Packages.props) controls package
 versions.
 
@@ -404,10 +404,7 @@ dotnet run --project src/PublicApi --no-launch-profile -- --urls "https://localh
 # Start these only when testing their enabled gateway API routes.
 dotnet run --project src/BasketService.api --no-launch-profile -- --urls "https://localhost:7102"
 dotnet run --project src/OrderService.api --no-launch-profile -- --urls "https://localhost:7103"
-
-# Inventory uses its own .NET 10 SDK settings. Run in a separate terminal.
-Set-Location src/InventoryService.api
-dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls "http://localhost:57967"
+dotnet run --project src/InventoryService.api --no-launch-profile -- --urls "http://localhost:57967"
 ```
 
 Enable Basket/Order by setting `FeatureManagement__UseBasketService` or
@@ -434,8 +431,8 @@ page loading as proof that it uses the Catalog API.
 
 ## Docker
 
-The [Dockerfile](Dockerfile) builds a Linux image with the .NET 8 SDK and runs
-the published gateway using the ASP.NET Core runtime, non-root user `app` and
+The [Dockerfile](Dockerfile) builds a Linux image with the .NET 10 SDK and runs
+the published gateway using the ASP.NET Core 8 runtime, non-root user `app` and
 HTTP port `8080`. Use Docker Desktop's Linux container engine.
 
 From the repository root:
@@ -480,8 +477,9 @@ The 4 November 2026 gateway run passed all 298 cases, including Inventory route/
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests
 to main, matching pushes to main and manual dispatches. Its Windows build job
-installs a .NET 8 SDK, restores, builds, tests and publishes the gateway. Deploy
-requires that job to succeed and is restricted to main pushes/manual dispatches.
+installs the .NET 10 SDK and the .NET 8 runtime, restores, builds, tests and
+publishes the gateway. Deployment requires that job to succeed and is restricted
+to main pushes and manual dispatches.
 It targets App Service `eshop-yarp-gateway` using repository secret
 `YARP_PUBLISH_PROFILE`. Pull requests do not deploy. These are workflow rules,
 not a claim that the changed workflow has already run successfully in GitHub.

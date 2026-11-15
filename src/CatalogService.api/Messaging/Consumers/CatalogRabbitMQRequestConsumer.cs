@@ -79,6 +79,13 @@ public sealed class CatalogRabbitMQRequestConsumer : BackgroundService
             }
         };
 
+        // Uden dette kald lytter consumeren aldrig på køen, og Catalog modtager ingen requests
+        await _channel.BasicConsumeAsync(
+            queue: "catalog.requests",
+            autoAck: false,
+            consumer: consumer,
+            cancellationToken: stoppingToken);
+
         _logger.LogInformation("Catalog Rabbitmq request consumer started.");
 
         await Task.Delay(Timeout.Infinite, stoppingToken);

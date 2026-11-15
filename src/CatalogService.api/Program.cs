@@ -14,6 +14,7 @@ using CatalogService.api.Messaging.Handlers.Adapters;
 using CatalogService.api.Messaging.Dispatcher;
 using CatalogService.api.Messaging.Deserialization.Resolvers;
 using CatalogService.api.Messaging.Serialization;
+using CatalogService.api.Messaging;
 using CatalogService.api.Messaging.Consumers;
 using CatalogService.api.Messaging.Producers;
 using CatalogService.api.Logging;
@@ -67,6 +68,9 @@ builder.Services.AddScoped<ICatalogReplyHandlerAdapter, CatalogReplyHandlerAdapt
 
 //MessageDispatcher
 builder.Services.AddSingleton<ICatalogMessageDispatcher, CatalogMessageDispatcher>();
+
+//MessageProcessor
+builder.Services.AddScoped<ICatalogMessageProcessor, CatalogMessageProcessor>();
 
 //MessageDeserialization
 builder.Services.AddSingleton<ICatalogMessageDeserializer, CatalogMessageDeserializer>();

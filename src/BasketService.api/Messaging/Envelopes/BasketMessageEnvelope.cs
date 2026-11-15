@@ -1,7 +1,12 @@
-﻿using BasketService.api.Interfaces;
+﻿using System.Text.Json.Serialization;
+using BasketService.api.Interfaces;
 
 namespace BasketService.api.Messaging.Envelopes;
 
+/// <summary>
+/// Kuverten om en besked (checkout-planens format). Payload kan komme som et JSON-objekt eller som en JSON-tekst
+/// (den gamle måde), og ligger her altid som tekst. Felterne til checkouten (CheckoutId osv.) er tomme på de gamle beskeder.
+/// </summary>
 public sealed record BasketMessageEnvelope(
     Guid MessageId,
     Guid CheckoutId,
@@ -11,6 +16,6 @@ public sealed record BasketMessageEnvelope(
     int SchemaVersion,
     DateTime SentAtUtc,
     string? ReplyTo,
-    string Payload);
+    [property: JsonConverter(typeof(PayloadAsStringConverter))] string Payload);
 
 

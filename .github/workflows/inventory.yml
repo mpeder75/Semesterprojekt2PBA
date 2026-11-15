@@ -9,6 +9,7 @@ on:
       - 'tests/IntegrationTests/InventoryService/**'
       - '.github/workflows/inventory.yml'
       - 'Directory.Packages.props'
+      - 'global.json'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +18,7 @@ on:
       - 'tests/IntegrationTests/InventoryService/**'
       - '.github/workflows/inventory.yml'
       - 'Directory.Packages.props'
+      - 'global.json'
   workflow_dispatch:
 
 permissions:

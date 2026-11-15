@@ -140,15 +140,16 @@ Gatewayens lokale opsætning og Docker-kommandoer er beskrevet i
 
 | Værktøj | Krav | Note |
 | ------- | ---- | ---- |
-| **.NET 8 SDK** | Påkrævet for hovedløsningen | Repoets `global.json` vælger .NET 8 SDK. [Hent .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0). |
-| **.NET 10 SDK** | Påkrævet for Inventory | Inventory har en [separat løsning og startvejledning](src/InventoryService.api/README.md#run-locally). [Hent .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0). |
+| **.NET 10 SDK** | Påkrævet for hovedløsningen | Repoets `global.json` vælger .NET 10 SDK. Åbn `eShopOnWeb.sln` i Visual Studio 2026. [Hent .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0). |
+| **ASP.NET Core 8 Runtime** | Påkrævet for de øvrige apps og .NET 8-tests | Inventory kører på .NET 10. [Hent .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0). |
 | **SQL Server LocalDB** | Påkrævet | Følger med Visual Studio. Verificer med `sqllocaldb info` → skal vise `MSSQLLocalDB`. |
 
 Verificér at det rigtige SDK er på plads:
 
 ```bash
 dotnet --version
-# Forvent 8.0.x fra repoets rod og 10.0.x fra src/InventoryService.api.
+dotnet --list-runtimes
+# Forvent SDK 10.0.x og Microsoft.AspNetCore.App 8.0.x samt 10.0.x.
 ```
 
 ### 1. Klon repo

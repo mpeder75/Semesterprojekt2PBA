@@ -30,10 +30,11 @@ public sealed class ConfigurationTests
     {
         using var config = ReadConfiguration("Production");
         Assert.True(config.GetValue<bool>("FeatureManagement:UseCatalogService"));
+        Assert.True(config.GetValue<bool>("FeatureManagement:UseBasketService"));
+        Assert.True(config.GetValue<bool>("FeatureManagement:UseOrderService"));
+        Assert.True(config.GetValue<bool>("FeatureManagement:UseInventoryService"));
         Assert.Empty(config.GetSection("ReverseProxy:Clusters:monolith-api:Destinations").GetChildren());
-        Assert.False(config.GetValue<bool>("FeatureManagement:UseInventoryService"));
-        Assert.Empty(config.GetSection("ReverseProxy:Clusters:inventory-service:Destinations").GetChildren());
-        foreach (var cluster in GatewayFactory.Clusters.Where(cluster => cluster is not "monolith-api" and not "inventory-service"))
+        foreach (var cluster in GatewayFactory.Clusters.Where(cluster => cluster != "monolith-api"))
         {
             var destinations = config.GetSection($"ReverseProxy:Clusters:{cluster}:Destinations").GetChildren();
             Assert.NotEmpty(destinations);
