@@ -46,7 +46,11 @@ public class InventoryGatewayTests
     {
         using var factory = new GatewayFactory(new GatewayOptions
         {
-            Environment = "Production", Catalog = true, Inventory = true, UseConfiguredDestinations = true
+            Environment = "Production", Catalog = true, Inventory = true, UseConfiguredDestinations = true,
+            Configuration = new Dictionary<string, string?>
+            {
+                ["ReverseProxy:Clusters:inventory-service:Destinations:azure:Address"] = null
+            }
         });
 
         var error = Assert.ThrowsAny<Exception>(() => factory.CreateGatewayClient());

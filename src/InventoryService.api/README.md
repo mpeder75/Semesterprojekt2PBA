@@ -53,7 +53,7 @@ Use `https://localhost:7153/api/inventory` for the API operations below; the gat
 
 The shared flag defaults to false; disabled Inventory routes return 503 Problem Details and do not reach any backend. Restart the gateway after changing the flag. Enabled Inventory routes use the existing API rate limit (60 requests per minute per client), two-minute deadline, and an independent `inventory-service` circuit. A 409 business conflict does not open that circuit.
 
-Production keeps Inventory routing disabled with no destination configured. Configure a deployed Inventory URL before enabling the route.
+The gateway's Production configuration enables Inventory routing to the project's Azure App Service.
 
 ## Manage stock in the admin UI
 
