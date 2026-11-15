@@ -23,7 +23,7 @@ namespace Microsoft.eShopWeb.IntegrationTests.InventoryService;
 public class InventoryGatewayIntegrationTests(InventoryApiFactory inventory) : IClassFixture<InventoryApiFactory>
 {
     [Fact]
-    public async Task Gateway_ForwardsCrudAndReservationFlowToInventoryAndSqlServer()
+    public async Task Gateway_ForwardsStockAndReservationRequestsWithoutCredentials()
     {
         using var gateway = new InventoryGatewayFactory(inventory);
         using var client = gateway.CreateClient(new WebApplicationFactoryClientOptions
@@ -32,10 +32,6 @@ public class InventoryGatewayIntegrationTests(InventoryApiFactory inventory) : I
         });
 
         var createRequest = new { catalogItemId = 1, quantity = 10 };
-        using var unauthorized = await client.PostAsJsonAsync("/api/inventory", createRequest);
-        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
-
-        client.DefaultRequestHeaders.Authorization = InventoryApiFactory.CreateAuthorization("Administrators");
         using var created = await client.PostAsJsonAsync("/api/inventory", createRequest);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         Assert.Equal("/api/inventory/1", created.Headers.Location?.ToString());

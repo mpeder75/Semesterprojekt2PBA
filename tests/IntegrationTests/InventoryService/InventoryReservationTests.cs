@@ -26,7 +26,7 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
     public InventoryReservationTests(InventoryApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateAdminClient();
+        _client = factory.CreateClient();
     }
 
     private async Task<int> CreateStock(int quantity)
@@ -218,7 +218,7 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
         await AssertStock(id, 10, 3);
 
         await using var restarted = _factory.WithWebHostBuilder(_ => { });
-        using var client = InventoryApiFactory.CreateAdminClient(restarted);
+        using var client = restarted.CreateClient();
         var stored = await client.GetFromJsonAsync<Reservation>(reservationUrl);
         Assert.Equal("Confirmed", stored!.Status);
 
@@ -243,7 +243,7 @@ public class InventoryReservationTests : IClassFixture<InventoryApiFactory>, IDi
         Assert.Equal(HttpStatusCode.Created, (await Reserve(order, (id, 3))).StatusCode);
 
         await using var restarted = _factory.WithWebHostBuilder(_ => { });
-        using var client = InventoryApiFactory.CreateAdminClient(restarted);
+        using var client = restarted.CreateClient();
         var reservation = await client.GetFromJsonAsync<Reservation>($"/api/inventory/reservations/{order}");
         Assert.Equal("Reserved", reservation!.Status);
         var retry = await client.PostAsJsonAsync("/api/inventory/reservations", new

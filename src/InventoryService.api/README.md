@@ -25,12 +25,11 @@ These layer boundaries are expressed through folders, namespaces and interfaces 
 
 ## Run locally
 
-Install the .NET 10 SDK and SQL Server LocalDB. Run Inventory commands from `src/InventoryService.api`, where `global.json` selects .NET 10. Open `InventoryService.slnx` for the service and its tests.
+Install the .NET 10 SDK and SQL Server LocalDB. Open `eShopOnWeb.sln` for Inventory, its tests, and the other services. Run the following commands from the repository root.
 
 ```powershell
-Set-Location src/InventoryService.api
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls http://localhost:57967
+dotnet run --project src/InventoryService.api --no-launch-profile -- --urls http://localhost:57967
 ```
 
 The default connection uses Windows authentication and the dedicated `InventoryDb` database on `(localdb)\MSSQLLocalDB`. Startup creates the database and applies its EF migrations. It adds no sample stock and preserves existing quantities on subsequent starts. Database startup errors stop the application.
@@ -63,19 +62,9 @@ catalog product. The dialog shows on-hand, reserved, and available units. It
 can initialize missing stock, change the on-hand quantity, and delete an empty
 stock record. The browser sends these requests through the gateway.
 
-Set `Authentication__JwtSigningKey` to the same secret in Web and Inventory.
-Generate a random key of at least 32 bytes and store it as Base64. If the
-legacy PublicApi is deployed and validates Web's tokens, give it the same
-setting so existing admin calls still work. Keep the key in server settings.
-For a fresh identity database, Web can create the admin account using
-`Authentication__SeedAdminPassword`. For an existing admin account, change
-the original demo password through the account settings before managing stock.
-
 ## HTTP API
 
-Stock and reservation reads are public. HTTP writes require a signed bearer
-token for the `Administrators` role. Inventory returns `401` for missing or
-invalid credentials and `403` for a valid token without the role.
+Inventory accepts stock and reservation requests directly without credentials.
 
 | Request | Behavior |
 | --- | --- |
@@ -95,15 +84,13 @@ Product/order IDs must be positive integers. Initial/set quantity is required an
 
 HTTP contracts are separate models in `Models/Requests` and `Models/Responses`. Response models are DTOs; endpoints map the internal entities to them.
 
-For a direct HTTP check, use the admin token returned by Web's `/User` endpoint
-in the signed-in session as `$adminToken`.
+Run a direct HTTP check against the local service:
 
 ```powershell
-$inventoryHeaders = @{ Authorization = "Bearer $adminToken" }
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory' -Headers $inventoryHeaders -ContentType 'application/json' -Body '{"catalogItemId":1,"quantity":10}'
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations' -Headers $inventoryHeaders -ContentType 'application/json' -Body '{"orderId":42,"items":[{"catalogItemId":1,"quantity":3}]}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory' -ContentType 'application/json' -Body '{"catalogItemId":1,"quantity":10}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations' -ContentType 'application/json' -Body '{"orderId":42,"items":[{"catalogItemId":1,"quantity":3}]}'
 Invoke-RestMethod -Uri 'http://localhost:57967/api/inventory/1'
-Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations/42/release' -Headers $inventoryHeaders
+Invoke-RestMethod -Method Post -Uri 'http://localhost:57967/api/inventory/reservations/42/release'
 ```
 
 `POST` creates a stock record; `PUT` only updates an existing record. Both setting and decreasing stock protect reserved units. Explicit adjustments are ordinary non-idempotent HTTP operations: sending the same adjustment twice applies it twice. Use order reservations for allocation, rather than also deducting the same order through adjustments.
@@ -146,12 +133,13 @@ Durable inbox/outbox handoffs and persisted technical retries are still required
 ## Tests
 
 ```powershell
-dotnet test InventoryService.slnx
+dotnet test tests/InventoryService.Tests/InventoryService.Tests.csproj
+dotnet test tests/IntegrationTests/InventoryService/InventoryService.IntegrationTests.csproj
 ```
 
 Unit tests require no database or broker. They cover initialization, setting quantities, increases/decreases, reservations, releases, insufficient stock, invalid inputs, overflow, and preserving quantities after a rejected change. Service tests substitute `IInventoryRepository` to verify allocation/release workflows, replay handling, rejected operations, safe conflict retries and uncertain-commit handling independently of EF Core.
 
-Run the command above from `src/InventoryService.api`. The dedicated `InventoryService.IntegrationTests` project in `tests/IntegrationTests/InventoryService` runs on .NET 10 because it hosts Inventory in-process. The shared `IntegrationTests` project runs on .NET 8.
+Run the commands above from the repository root. The dedicated `InventoryService.IntegrationTests` project runs on .NET 10 because it hosts Inventory in-process. The shared `IntegrationTests` project runs on .NET 8. Both are part of `eShopOnWeb.sln`.
 
 Integration tests send real HTTP requests through `WebApplicationFactory` and use the real EF/SQL Server provider and migrations. They cover CRUD, adjustments, reservations/releases, replay after restart, concurrent orders and duplicate requests, database constraints, and rollback after both business rejection and forced SQL write failure. Each fixture creates a database named `InventoryTests_<random GUID>` and drops only that database afterward. SQL Server must be available; missing infrastructure fails the suite rather than skipping it.
 

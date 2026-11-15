@@ -351,10 +351,9 @@ gateway hostname so browser login and API requests use the same origin.
 
 ## Run locally
 
-Run commands from the repository root. Install a stable .NET 8 SDK compatible
-with [global.json](../../global.json): baseline `8.0.100`,
-`rollForward: latestMinor`, previews disabled. This permits later compatible
-.NET 8 SDKs; it does not pin the machine to `8.0.425` or select .NET 9/10.
+Run commands from the repository root. Use the .NET 10 SDK selected by
+[global.json](../../global.json) to build the gateway. The gateway and its own
+tests target .NET 8 and use the ASP.NET Core 8 runtime.
 [Directory.Packages.props](../../Directory.Packages.props) controls package
 versions.
 
@@ -404,10 +403,7 @@ dotnet run --project src/PublicApi --no-launch-profile -- --urls "https://localh
 # Start these only when testing their enabled gateway API routes.
 dotnet run --project src/BasketService.api --no-launch-profile -- --urls "https://localhost:7102"
 dotnet run --project src/OrderService.api --no-launch-profile -- --urls "https://localhost:7103"
-
-# Inventory uses its own .NET 10 SDK settings. Run in a separate terminal.
-Set-Location src/InventoryService.api
-dotnet run --project InventoryService.api.csproj --no-launch-profile -- --urls "http://localhost:57967"
+dotnet run --project src/InventoryService.api --no-launch-profile -- --urls "http://localhost:57967"
 ```
 
 Enable Basket/Order by setting `FeatureManagement__UseBasketService` or
@@ -434,8 +430,8 @@ page loading as proof that it uses the Catalog API.
 
 ## Docker
 
-The [Dockerfile](Dockerfile) builds a Linux image with the .NET 8 SDK and runs
-the published gateway using the ASP.NET Core runtime, non-root user `app` and
+The [Dockerfile](Dockerfile) builds a Linux image with the .NET 10 SDK and runs
+the published gateway using the ASP.NET Core 8 runtime, non-root user `app` and
 HTTP port `8080`. Use Docker Desktop's Linux container engine.
 
 From the repository root:
@@ -480,8 +476,9 @@ The 4 November 2026 gateway run passed all 298 cases, including Inventory route/
 
 [Gateway CI](../../.github/workflows/gateway.yml) runs on matching pull requests
 to main, matching pushes to main and manual dispatches. Its Windows build job
-installs a .NET 8 SDK, restores, builds, tests and publishes the gateway. Deploy
-requires that job to succeed and is restricted to main pushes/manual dispatches.
+installs the .NET 10 SDK and the .NET 8 runtime, restores, builds, tests and
+publishes the gateway. Deployment requires that job to succeed and is restricted
+to main pushes and manual dispatches.
 It targets App Service `eshop-yarp-gateway` using repository secret
 `YARP_PUBLISH_PROFILE`. Pull requests do not deploy. These are workflow rules,
 not a claim that the changed workflow has already run successfully in GitHub.

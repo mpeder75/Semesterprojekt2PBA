@@ -6,7 +6,7 @@ From the repository root, run:
 dotnet test tests/ApiGateway.Tests/ApiGateway.Tests.csproj --configuration Release
 ```
 
-Use a .NET 8 SDK compatible with the repository's `global.json`. A successful
+Use the .NET 10 SDK selected by the repository's `global.json` and the .NET 8 runtime. A successful
 run reports all tests passed and returns exit code 0.
 
 The integration tests start the actual gateway in ASP.NET Core's in-memory test
