@@ -70,7 +70,8 @@ public sealed class BasketRabbitMqRequestConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process RabbitMQ request");
+                _logger.LogError(ex, "Failed to process basket request {MessageId} with correlation {CorrelationId}",
+                    eventArgs.BasicProperties.MessageId, eventArgs.BasicProperties.CorrelationId);
 
                 await _channel.BasicNackAsync(
                     eventArgs.DeliveryTag,

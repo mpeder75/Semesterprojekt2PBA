@@ -24,7 +24,15 @@ builder.Services.AddHostedService<InventoryCheckoutRequestConsumer>();
 
 var app = builder.Build();
 
-await app.Services.MigrateInventoryDatabaseAsync();
+try
+{
+    await app.Services.MigrateInventoryDatabaseAsync();
+}
+catch (Exception exception)
+{
+    app.Logger.LogError(exception, "Inventory database migration failed");
+    throw;
+}
 
 if (app.Environment.IsDevelopment())
 {

@@ -44,21 +44,29 @@ public class CheckoutApiClient : ICheckoutApiClient
 
             var message = await response.Content.ReadAsStringAsync(cancellationToken);
 
-            return response.StatusCode switch
+            var result = response.StatusCode switch
             {
                 HttpStatusCode.Conflict => new StartCheckoutResult(StartCheckoutOutcome.Conflict, Message: message),
                 HttpStatusCode.BadRequest => new StartCheckoutResult(StartCheckoutOutcome.Rejected, Message: message),
                 _ => Unavailable($"OrderService answered {(int)response.StatusCode}.")
             };
+
+            if (result.Outcome == StartCheckoutOutcome.Unavailable)
+            {
+                _logger.LogError("OrderService returned HTTP {StatusCode} while starting checkout {CheckoutId}",
+                    (int)response.StatusCode, checkoutId);
+            }
+
+            return result;
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Could not reach OrderService to start checkout {CheckoutId}", checkoutId);
+            _logger.LogError(ex, "Could not reach OrderService to start checkout {CheckoutId}", checkoutId);
             return Unavailable("OrderService could not be reached.");
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Starting checkout {CheckoutId} timed out", checkoutId);
+            _logger.LogError(ex, "Starting checkout {CheckoutId} timed out", checkoutId);
             return Unavailable("OrderService did not answer in time.");
         }
     }

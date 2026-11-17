@@ -19,12 +19,10 @@ public class BasketApiClient : IBasketApiClient
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _httpClient;
-    private readonly ILogger<BasketApiClient> _logger;
 
-    public BasketApiClient(HttpClient httpClient, ILogger<BasketApiClient> logger)
+    public BasketApiClient(HttpClient httpClient)
     {
         _httpClient = httpClient;
-        _logger = logger;
     }
 
     public async Task<int> ReplaceBasketAsync(string buyerId, IReadOnlyCollection<BasketLine> lines, CancellationToken cancellationToken = default)
@@ -70,12 +68,10 @@ public class BasketApiClient : IBasketApiClient
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Could not reach BasketService to prepare the basket for checkout");
             throw new BasketBridgeException("BasketService could not be reached.", ex);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "BasketService did not answer in time");
             throw new BasketBridgeException("BasketService did not answer in time.", ex);
         }
     }

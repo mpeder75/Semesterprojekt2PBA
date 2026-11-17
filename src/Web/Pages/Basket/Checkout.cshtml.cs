@@ -22,7 +22,7 @@ public class CheckoutModel : PageModel
     private readonly IOrderService _orderService;
     private string? _username = null;
     private readonly IBasketViewModelService _basketViewModelService;
-    private readonly IAppLogger<CheckoutModel> _logger;
+    private readonly ILogger<CheckoutModel> _logger;
     private readonly ICheckoutApiClient _checkoutApiClient;
     private readonly IBasketApiClient _basketApiClient;
     private readonly CheckoutServiceSettings _checkoutSettings;
@@ -31,7 +31,7 @@ public class CheckoutModel : PageModel
         IBasketViewModelService basketViewModelService,
         SignInManager<ApplicationUser> signInManager,
         IOrderService orderService,
-        IAppLogger<CheckoutModel> logger,
+        ILogger<CheckoutModel> logger,
         ICheckoutApiClient checkoutApiClient,
         IBasketApiClient basketApiClient,
         IOptions<CheckoutServiceSettings> checkoutSettings)
@@ -85,10 +85,10 @@ public class CheckoutModel : PageModel
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketService.DeleteBasketAsync(BasketModel.Id);
         }
-        catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
+        catch (EmptyBasketOnCheckoutException)
         {
             //Redirect to Empty Basket page
-            _logger.LogWarning(emptyBasketOnCheckoutException.Message);
+            _logger.LogWarning("Checkout could not start because basket {BasketId} is empty", BasketModel.Id);
             return RedirectToPage("/Basket/Index");
         }
 
@@ -125,7 +125,7 @@ public class CheckoutModel : PageModel
         }
         catch (BasketBridgeException ex)
         {
-            _logger.LogWarning("Could not prepare the basket in BasketService: {Message}", ex.Message);
+            _logger.LogError(ex, "Could not prepare the basket in BasketService for checkout {CheckoutId}", checkoutKey);
             ModelState.AddModelError(string.Empty, "We could not prepare your basket for checkout right now. Please try again.");
             CheckoutKey = checkoutKey;
             return Page();
@@ -143,7 +143,10 @@ public class CheckoutModel : PageModel
                 break;
 
             default:
-                _logger.LogWarning("Checkout could not be started: {Outcome} {Message}", result.Outcome, result.Message);
+                if (result.Outcome == StartCheckoutOutcome.Rejected)
+                {
+                    _logger.LogWarning("OrderService rejected checkout {CheckoutId}", checkoutKey);
+                }
                 ModelState.AddModelError(string.Empty, "We could not start your checkout right now. Please try again.");
                 break;
         }

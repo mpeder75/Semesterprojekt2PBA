@@ -47,7 +47,7 @@ public class CatalogContextSeed
 
             retryForAvailability++;
 
-            logger.LogError(ex.Message);
+            logger.LogError(ex, "Catalog database initialization failed. Retrying attempt {RetryAttempt}", retryForAvailability);
             await SeedAsync(catalogContext, logger, retryForAvailability);
             throw;
         }

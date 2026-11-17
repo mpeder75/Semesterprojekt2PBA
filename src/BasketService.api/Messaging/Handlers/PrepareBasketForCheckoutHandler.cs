@@ -7,10 +7,12 @@ namespace BasketService.api.Messaging.Handlers;
 public class PrepareBasketForCheckoutHandler : IBasketMessageHandler<PrepareBasketForCheckout, IBasketReply>
 {
     private readonly IBasketService _basketService;
+    private readonly ILogger<PrepareBasketForCheckoutHandler> _logger;
 
-    public PrepareBasketForCheckoutHandler(IBasketService basketService)
+    public PrepareBasketForCheckoutHandler(IBasketService basketService, ILogger<PrepareBasketForCheckoutHandler> logger)
     {
         _basketService = basketService;
+        _logger = logger;
     }
 
     public async Task<IBasketReply> HandleAsync(PrepareBasketForCheckout message, CancellationToken cancellationToken = default)
@@ -23,8 +25,14 @@ public class PrepareBasketForCheckoutHandler : IBasketMessageHandler<PrepareBask
 
             return new BasketPrepared(preparedBasket);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Checkout preparation was denied for basket {BasketId}", message.basketId);
+            return new BasketPreparationRejected(ex.Message);
+        }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Checkout preparation failed for basket {BasketId}", message.basketId);
             return new BasketPreparationRejected(ex.Message);
         }
     }

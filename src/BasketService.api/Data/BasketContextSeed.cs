@@ -22,7 +22,7 @@ public class BasketContextSeed
 
             retryForAvailability++;
 
-            logger.LogError(ex.Message);
+            logger.LogError(ex, "Basket database migration failed. Retrying attempt {RetryAttempt}", retryForAvailability);
             await SeedAsync(basketContext, logger, retryForAvailability);
         }
     }

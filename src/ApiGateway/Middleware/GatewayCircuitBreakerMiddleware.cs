@@ -10,13 +10,16 @@ public sealed class GatewayCircuitBreakerMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly GatewayCircuitBreakerRegistry _registry;
+    private readonly ILogger<GatewayCircuitBreakerMiddleware> _logger;
 
     public GatewayCircuitBreakerMiddleware(
         RequestDelegate next,
-        GatewayCircuitBreakerRegistry registry)
+        GatewayCircuitBreakerRegistry registry,
+        ILogger<GatewayCircuitBreakerMiddleware> logger)
     {
         _next = next;
         _registry = registry;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -28,7 +31,7 @@ public sealed class GatewayCircuitBreakerMiddleware
 
         if (service is null || string.IsNullOrWhiteSpace(clusterId))
         {
-            await _next(context);
+            await ForwardAsync(context, clusterId);
             return;
         }
 
@@ -41,10 +44,7 @@ public sealed class GatewayCircuitBreakerMiddleware
             await pipeline.ExecuteAsync(async _ =>
             {
                 forwardingStarted = true;
-                await _next(context);
-
-                var error = context.Features.Get<IForwarderErrorFeature>()?.Error
-                    ?? ForwarderError.None;
+                var error = await ForwardAsync(context, clusterId);
 
                 return ProxyOutcomeClassifier.Classify(
                     context.Response.StatusCode,
@@ -77,5 +77,21 @@ public sealed class GatewayCircuitBreakerMiddleware
                     ["traceId"] = context.TraceIdentifier
                 }).ExecuteAsync(context);
         }
+    }
+
+    private async Task<ForwarderError> ForwardAsync(HttpContext context, string? clusterId)
+    {
+        await _next(context);
+
+        var error = context.Features.Get<IForwarderErrorFeature>()?.Error ?? ForwarderError.None;
+        if (!string.IsNullOrWhiteSpace(clusterId)
+            && error == ForwarderError.None
+            && context.Response.StatusCode >= StatusCodes.Status500InternalServerError)
+        {
+            _logger.LogError("Backend {ClusterId} returned HTTP {StatusCode} for request {TraceId}",
+                clusterId, context.Response.StatusCode, context.TraceIdentifier);
+        }
+
+        return error;
     }
 }
