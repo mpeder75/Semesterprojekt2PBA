@@ -28,6 +28,7 @@ internal sealed record GatewayOptions
     public IReadOnlyDictionary<string, string?> Configuration { get; init; }
         = new Dictionary<string, string?>();
     public Func<ForwardedRequest, CancellationToken, Task<HttpResponseMessage>>? Backend { get; init; }
+    public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? WarmupBackend { get; init; }
     public TimeProvider? TimeProvider { get; init; }
     public Action? RequestCompleted { get; init; }
 }
@@ -115,6 +116,8 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
             services.RemoveAll<IForwarderHttpClientFactory>();
             services.AddSingleton<IForwarderHttpClientFactory>(
                 new StubClientFactory(Requests, _options.Backend));
+            services.AddHttpClient(BackendWarmup.ClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new WarmupHandler(_options.WarmupBackend));
             services.AddSingleton<IStartupFilter>(
                                                 new PeerAddressStartupFilter(
                                                     IPAddress.Parse(_options.PeerAddress),
@@ -177,6 +180,13 @@ internal sealed class GatewayFactory : WebApplicationFactory<global::Program>
     {
         public HttpMessageInvoker CreateClient(ForwarderHttpClientContext context)
             => new(new StubHandler(context.ClusterId, requests, backend));
+    }
+
+    private sealed class WarmupHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? backend) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => backend?.Invoke(request, cancellationToken) ?? Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
     }
 
     private sealed class StubHandler(
