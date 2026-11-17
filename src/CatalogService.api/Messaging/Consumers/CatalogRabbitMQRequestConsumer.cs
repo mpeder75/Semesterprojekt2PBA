@@ -69,7 +69,8 @@ public sealed class CatalogRabbitMQRequestConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process RabbitMq request");
+                _logger.LogError(ex, "Failed to process catalog request {MessageId} with correlation {CorrelationId}",
+                    eventArgs.BasicProperties.MessageId, eventArgs.BasicProperties.CorrelationId);
 
                 await _channel.BasicNackAsync(
                     eventArgs.DeliveryTag,

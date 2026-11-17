@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.eShopWeb.Web.Services;
 using Microsoft.eShopWeb.Web.ViewModels;
-using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Microsoft.eShopWeb.UnitTests.Web.Services;
@@ -15,7 +14,7 @@ public class BasketApiClientTests
     private readonly FakeBasketService _basketService = new();
 
     private BasketApiClient Client() =>
-        new(new HttpClient(_basketService) { BaseAddress = new Uri("http://basket.test/") }, NullLogger<BasketApiClient>.Instance);
+        new(new HttpClient(_basketService) { BaseAddress = new Uri("http://basket.test/") });
 
     [Fact]
     public async Task NewBasket_ContainsExactlyTheLines_AndReturnsTheBasketId()

@@ -42,9 +42,16 @@ builder.Services.AddRequestTimeouts();
 
 builder.Services.AddGatewayRateLimiting(builder.Configuration);
 
-builder.Services.AddGatewayForwardedHeaders(
-    isAzureAppService: !string.IsNullOrEmpty(
-        builder.Configuration["WEBSITE_SITE_NAME"]));
+var isAzureAppService = !string.IsNullOrEmpty(builder.Configuration["WEBSITE_SITE_NAME"]);
+builder.Services.AddGatewayForwardedHeaders(isAzureAppService);
+
+if (isAzureAppService)
+{
+    builder.Services.AddHttpClient(BackendWarmup.ClientName,
+            client => client.Timeout = TimeSpan.FromMinutes(2))
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    builder.Services.AddHostedService<BackendWarmup>();
+}
 
 builder.Services.AddHsts(options =>
 {

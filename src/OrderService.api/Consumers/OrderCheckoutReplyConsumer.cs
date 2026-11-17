@@ -86,7 +86,8 @@ public class OrderCheckoutReplyConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process message. Delivery tag: {DeliveryTag}", ea.DeliveryTag);
+                _logger.LogError(ex, "Failed to process checkout reply {MessageId} with correlation {CorrelationId} and delivery tag {DeliveryTag}",
+                    ea.BasicProperties.MessageId, ea.BasicProperties.CorrelationId, ea.DeliveryTag);
 
                 await channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false, cancellationToken: stoppingToken);
             }

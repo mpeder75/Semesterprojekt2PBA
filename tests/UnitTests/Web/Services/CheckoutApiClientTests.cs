@@ -3,7 +3,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.eShopWeb.Web.Services;
 using Microsoft.eShopWeb.Web.ViewModels;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Xunit;
 
 namespace Microsoft.eShopWeb.UnitTests.Web.Services;
@@ -14,8 +16,8 @@ public class CheckoutApiClientTests
 
     private readonly StubHandler _handler = new();
 
-    private CheckoutApiClient Client() =>
-        new(new HttpClient(_handler) { BaseAddress = new Uri("http://order.test/") }, NullLogger<CheckoutApiClient>.Instance);
+    private CheckoutApiClient Client(ILogger<CheckoutApiClient>? logger = null) =>
+        new(new HttpClient(_handler) { BaseAddress = new Uri("http://order.test/") }, logger ?? NullLogger<CheckoutApiClient>.Instance);
 
     [Fact]
     public async Task Start_SendsPostWithIdempotencyKeyAndJsonBody()
@@ -56,13 +58,20 @@ public class CheckoutApiClientTests
     }
 
     [Fact]
-    public async Task Start_WhenOrderServiceCannotBeReached_ReturnsUnavailable()
+    public async Task Start_WhenOrderServiceCannotBeReached_LogsExceptionAndReturnsUnavailable()
     {
-        _handler.Throw(new HttpRequestException("connection refused"));
+        var logger = Substitute.For<ILogger<CheckoutApiClient>>();
+        var failure = new HttpRequestException("connection refused");
+        _handler.Throw(failure);
 
-        var result = await Client().StartAsync(Guid.NewGuid(), 5, "buyer@test.dk", Address);
+        var result = await Client(logger).StartAsync(Guid.NewGuid(), 5, "buyer@test.dk", Address);
 
         Assert.Equal(StartCheckoutOutcome.Unavailable, result.Outcome);
+
+        var log = Assert.Single(logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log)));
+        var arguments = log.GetArguments();
+        Assert.Equal(LogLevel.Error, arguments[0]);
+        Assert.Same(failure, arguments[3]);
     }
 
     [Fact]
